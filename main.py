@@ -3,7 +3,7 @@ from sqlalchemy.orm import relationship, backref, sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
 from models import Base, Cast, User, Reaction, Location
 import json
-from fetcher import get_recent_users
+from fetcher import get_recent_users, get_recent_casts
 
 
 def create_schema(Base, engine):
@@ -57,5 +57,35 @@ def insert_users_to_db(engine, users):
     session.close()
 
 
+def insert_casts_to_db(engine, casts):
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    for cast in casts:
+        c = Cast(
+            hash=cast['_hashV2'],
+            text=cast['text'],
+            timestamp=cast['timestamp'],
+            author_fid=cast['author']['fid'],
+            parent_hash=cast['_parentHashV2'] if '_parentHashV2' in cast else None,
+            thread_hash=cast['_threadHashV2'] if '_threadHashV2' in cast else None,
+        )
+
+        session.add(c)
+
+        for cast in casts:
+            if '_parentHashV2' in cast:
+                parent = session.query(Cast).filter_by(
+                    hash=cast['_parentHashV2']).first()
+                if parent:
+                    child = session.query(Cast).filter_by(
+                        hash=cast['_hashV2']).first()
+                    parent.children_hashes.append(child)
+
+    session.commit()
+    session.close()
+
+
 recreate_schema(Base, engine)
 insert_users_to_db(engine, get_recent_users()['users'])
+insert_casts_to_db(engine, get_recent_casts()['casts'])

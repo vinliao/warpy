@@ -38,7 +38,7 @@ class Cast(Base):
 class Reaction(Base):
     __tablename__ = 'reactions'
     hash = Column(String, primary_key=True)
-    type = Column(String)  # like & recast
+    reaction_type = Column(String)  # like & recast
     timestamp = Column(BigInteger)
     target_hash = Column(String, ForeignKey('casts.hash'))
     author_fid = Column(BigInteger, ForeignKey('users.fid'))

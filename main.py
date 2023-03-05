@@ -1,9 +1,10 @@
-from sqlalchemy import create_engine, text
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy import create_engine, text, insert
+from sqlalchemy.orm import sessionmaker, subqueryload
 from models import Base, Cast, User, Reaction, Location, parent_association
 from fetcher import get_recent_users, get_recent_casts
 import os
 import dotenv
+
 
 dotenv.load_dotenv()
 
@@ -83,18 +84,21 @@ def insert_casts_to_db(engine, casts):
     session.close()
 
 
-def create_association(engine):
+def recreate_association_table(engine):
     Session = sessionmaker(bind=engine)
     session = Session()
 
-    for cast in session.query(Cast).all():
-        if cast.parent_hash:
-            stmt = parent_association.insert().values(
-                parent_hash=cast.parent_hash,
-                cast_hash=cast.hash
-            )
-            session.execute(stmt)
+    parent_association.drop(engine, checkfirst=True)
+    parent_association.create(engine, checkfirst=True)
+
+    # get all casts with parent_hash
+    casts = session.query(Cast).filter(Cast.parent_hash != None).all()
+
+    for cast in casts:
+        # insert into association table
+        stmt = parent_association.insert().values(
+            parent_hash=cast.parent_hash, cast_hash=cast.hash)
+        session.execute(stmt)
 
     session.commit()
     session.close()
-

@@ -126,6 +126,4 @@ def insert_casts_to_db(engine, start_cursor=None):
     session.close()
 
 
-
-
 engine = create_engine('sqlite:///new.db')

@@ -79,15 +79,6 @@ def insert_casts_to_db(engine, casts):
 
         session.add(c)
 
-        # for cast in casts:
-        #     if '_parentHashV2' in cast:
-        #         parent = session.query(Cast).filter_by(
-        #             hash=cast['_parentHashV2']).first()
-        #         if parent:
-        #             child = session.query(Cast).filter_by(
-        #                 hash=cast['_hashV2']).first()
-        #             parent.children_hashes.append(child)
-
     session.commit()
     session.close()
 
@@ -107,13 +98,3 @@ def create_association(engine):
     session.commit()
     session.close()
 
-
-recreate_schema(Base, engine)
-
-insert_users_to_db(engine, get_recent_users()['users'])
-insert_casts_to_db(engine, get_recent_casts()['casts'])
-create_association(engine)
-
-
-# now: create entreis for reactions (that links to cast and user)
-# another one: fill in the association table

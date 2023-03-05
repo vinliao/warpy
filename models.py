@@ -1,38 +1,36 @@
-from sqlalchemy import Column, BigInteger, String, ForeignKey, Table
+from sqlalchemy import Column, BigInteger, String, ForeignKey, Table, Integer
 from sqlalchemy.orm import relationship, declarative_base
 
 Base = declarative_base()
 
-association_table = Table('parent_association', Base.metadata,
-                          Column('parent_hash', String,
-                                 ForeignKey('casts.hash')),
-                          Column('cast_hash', String,
-                                 ForeignKey('casts.hash'))
-                          )
+parent_association = Table('parent_association', Base.metadata,
+                           Column('parent_hash', String,
+                                  ForeignKey('casts.hash')),
+                           Column('cast_hash', String,
+                                  ForeignKey('casts.hash'))
+                           )
 
 
+# figure out ancestor hashes later
 class Cast(Base):
     __tablename__ = 'casts'
     hash = Column(String, primary_key=True)
-    thread_hash = Column(String, ForeignKey('casts.hash'))
-    parent_hash = Column(String, ForeignKey('casts.hash'), nullable=True)
+    thread_hash = Column(String, ForeignKey(
+        'casts.hash'))
+    parent_hash = Column(String, ForeignKey(
+        'casts.hash'), nullable=True)
     text = Column(String)
     timestamp = Column(BigInteger)
-    author_fid = Column(BigInteger, ForeignKey('users.fid'))
+    author_fid = Column(BigInteger, ForeignKey(
+        'users.fid'))
     author = relationship('User', back_populates='casts')
     reactions = relationship('Reaction', back_populates='target')
-    children_hashes = relationship("Cast", secondary=association_table,
+    children_hashes = relationship("Cast", secondary=parent_association,
                                    primaryjoin=(
-                                       hash == association_table.c.parent_hash),
+                                       hash == parent_association.c.parent_hash),
                                    secondaryjoin=(
-                                       hash == association_table.c.cast_hash),
+                                       hash == parent_association.c.cast_hash),
                                    backref="parent_casts")
-    ancestor_hashes = relationship("Cast", secondary=association_table,
-                                   primaryjoin=(
-                                       hash == association_table.c.cast_hash),
-                                   secondaryjoin=(
-                                       hash == association_table.c.parent_hash),
-                                   backref="thread_casts")
 
 
 class Reaction(Base):
@@ -57,7 +55,7 @@ class User(Base):
     fid = Column(BigInteger, primary_key=True)
     username = Column(String)
     display_name = Column(String)
-    verified = Column(BigInteger, default=0)
+    verified = Column(Integer, default=0)
     pfp_url = Column(String, nullable=True)
     follower_count = Column(BigInteger)
     following_count = Column(BigInteger)

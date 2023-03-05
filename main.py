@@ -1,9 +1,11 @@
-from sqlalchemy import create_engine, Column, Integer, String, ForeignKey, Table, text
-from sqlalchemy.orm import relationship, backref, sessionmaker
-from sqlalchemy.ext.declarative import declarative_base
-from models import Base, Cast, User, Reaction, Location
-import json
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import sessionmaker
+from models import Base, Cast, User, Reaction, Location, parent_association
 from fetcher import get_recent_users, get_recent_casts
+import os
+import dotenv
+
+dotenv.load_dotenv()
 
 
 def create_schema(Base, engine):
@@ -19,8 +21,12 @@ def recreate_schema(Base, engine):
     create_schema(Base, engine)
 
 
+def postgres_disable_referential_integrity(engine):
+    with engine.connect() as conn:
+        conn.execute(text('SET CONSTRAINTS ALL DEFERRED'))
+
+
 engine = create_engine('sqlite:///test.db', echo=True)
-# create_schema(Base, engine)
 
 
 def insert_users_to_db(engine, users):
@@ -73,19 +79,41 @@ def insert_casts_to_db(engine, casts):
 
         session.add(c)
 
-        for cast in casts:
-            if '_parentHashV2' in cast:
-                parent = session.query(Cast).filter_by(
-                    hash=cast['_parentHashV2']).first()
-                if parent:
-                    child = session.query(Cast).filter_by(
-                        hash=cast['_hashV2']).first()
-                    parent.children_hashes.append(child)
+        # for cast in casts:
+        #     if '_parentHashV2' in cast:
+        #         parent = session.query(Cast).filter_by(
+        #             hash=cast['_parentHashV2']).first()
+        #         if parent:
+        #             child = session.query(Cast).filter_by(
+        #                 hash=cast['_hashV2']).first()
+        #             parent.children_hashes.append(child)
+
+    session.commit()
+    session.close()
+
+
+def create_association(engine):
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    for cast in session.query(Cast).all():
+        if cast.parent_hash:
+            stmt = parent_association.insert().values(
+                parent_hash=cast.parent_hash,
+                cast_hash=cast.hash
+            )
+            session.execute(stmt)
 
     session.commit()
     session.close()
 
 
 recreate_schema(Base, engine)
+
 insert_users_to_db(engine, get_recent_users()['users'])
 insert_casts_to_db(engine, get_recent_casts()['casts'])
+create_association(engine)
+
+
+# now: create entreis for reactions (that links to cast and user)
+# another one: fill in the association table

@@ -77,6 +77,8 @@ def get_recent_casts(cursor: str = None):
     # have cursor in url if cursor exists, use ternary
     url = f"https://api.warpcast.com/v2/recent-casts?cursor={cursor}&limit=1000" if cursor else "https://api.warpcast.com/v2/recent-casts?limit=1000"
 
+    print(f"Fetching from {url}")
+
     # fetch to url with the bearer token
     result = requests.get(
         url, headers={"Authorization": "Bearer " + warpcast_hub_key})
@@ -88,5 +90,42 @@ def get_recent_casts(cursor: str = None):
     return data
 
 
+def insert_casts_to_db(engine, start_cursor=None):
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    cursor = start_cursor
+    while True:
+        data = get_recent_casts(cursor=cursor)
+        casts = data["casts"]
+        cursor = data.get("cursor")
+
+        for cast in casts:
+            c = Cast(
+                hash=cast['_hashV2'],
+                text=cast['text'],
+                timestamp=cast['timestamp'],
+                author_fid=cast['author']['fid'],
+                parent_hash=cast['_parentHashV2'] if '_parentHashV2' in cast else None,
+                thread_hash=cast['_threadHashV2'] if '_threadHashV2' in cast else None,
+            )
+
+            session.merge(c)
+
+        session.commit()
+
+        one_hash = casts[0]['_hashV2']
+        if session.query(Cast).filter_by(hash=one_hash).first():
+            break
+        elif cursor is None:
+            break
+        else:
+            time.sleep(1)  # add a delay to avoid hitting rate limit
+            continue
+
+    session.close()
+
+
+
+
 engine = create_engine('sqlite:///new.db')
-insert_users_to_db(engine)

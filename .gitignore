@@ -10,7 +10,7 @@ venv/
 # Logs and databases
 *.log
 *.sqlite3
-*.db
+# *.db
 
 # Distribution / packaging
 dist/

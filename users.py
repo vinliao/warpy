@@ -5,6 +5,7 @@ from sqlalchemy.orm import sessionmaker
 from models import Base, User, Location
 from sqlalchemy import create_engine
 import time
+import re
 
 load_dotenv()
 warpcast_hub_key = os.getenv("WARPCAST_HUB_KEY")
@@ -144,12 +145,17 @@ def insert_data_from_ensdata(engine):
 
     session = sessionmaker(bind=engine)()
 
-    # get all users where ens is null but external address is not null
-    all_addresses = [u.external_address for u in session.query(
-        User).filter_by(ens=None).filter(User.external_address != None).all()]
+    last_user = session.query(User).filter(
+        User.ens != None).order_by(User.fid).first()
+    all_addresses = [u.external_address for u in session.query(User).filter(
+        User.fid <= last_user.fid).filter(User.external_address != None).order_by(User.fid.desc()).all()]
+
+    # all_addresses = [u.external_address for u in session.query(User).filter(
+    #     user.ens != None).order_by(User.fid.desc()).all()]
 
     for address in all_addresses:
         success = False  # flag to indicate whether the update was successful
+        retries = 0  # counter for the number of retries
         while not success:
             try:
                 result = requests.get(url + address, timeout=10)
@@ -165,14 +171,48 @@ def insert_data_from_ensdata(engine):
 
                     print(f"Updated {address} with {data}")
 
-                # time.sleep(0.5)
-
                 success = True  # set flag to indicate success
 
             except requests.exceptions.Timeout:
-                print(f"Request timed out for {address}. Retrying...")
-                continue
+                retries += 1
+                if retries == 3:
+                    print(
+                        f"Request timed out for {address} after 3 retries. Skipping to next address.")
+                    break  # skip to next address
+                else:
+                    print(
+                        f"Request timed out for {address}. Retrying ({retries}/3)...")
+                    continue
 
+    session.close()
+
+
+def set_more_info_from_bio(engine):
+    session = sessionmaker(bind=engine)()
+    all_user = session.query(User).all()
+
+    for user in all_user:
+        if user.bio_text:
+            bio_text = user.bio_text.lower()
+
+            if 'twitter' in bio_text:
+                twitter_username = re.search(r'(\S+)\.twitter', bio_text)
+                if twitter_username:
+                    twitter_username = twitter_username.group(1)
+                    twitter_username = re.sub(
+                        r'[^\w\s]|_', '', twitter_username)
+                    # print(twitter_username)
+                    user.twitter = twitter_username
+
+            if 'telegram' in bio_text:
+                telegram_username = re.search(r'(\S+)\.telegram', bio_text)
+                if telegram_username:
+                    telegram_username = telegram_username.group(1)
+                    # print(telegram_username)
+                    user.telegram = telegram_username
+
+            session.merge(user)
+    session.commit()
     session.close()
 
 
@@ -184,5 +224,11 @@ engine = create_engine('sqlite:///data.db')
 
 # create_schema(engine)
 # insert_users_to_db(engine)
-insert_data_from_searchcaster(engine)
-# insert_data_from_ensdata(engine)
+# insert_data_from_searchcaster(engine)
+insert_data_from_ensdata(engine)
+
+# todo:
+# 1. go through user, if it contains xxx.twitter or yyy.telegram, add it to the respective table
+# 2. modularize the code even further
+# 3. type safety
+# 4. write test (lol)

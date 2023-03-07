@@ -83,28 +83,37 @@ def insert_data_from_searchcaster(engine):
         User).filter_by(registered_at=-1).all()]
 
     for username in all_usernames:
-        result = requests.get(url + username)
-        data = result.json()
-        item = data[0]
+        success = False  # flag to indicate whether the update was successful
+        while not success:
+            try:
+                result = requests.get(url + username, timeout=10)
+                data = result.json()
+                item = data[0]
 
-        farcaster_address = item['body']['address']
-        external_address = item['connectedAddress']
-        registered_at = item['body']['registeredAt']
+                farcaster_address = item['body']['address']
+                external_address = item['connectedAddress']
+                registered_at = item['body']['registeredAt']
 
-        # update user
+                user = session.query(User).filter_by(username=username).first()
+                user.farcaster_address = farcaster_address
+                user.external_address = external_address
+                user.registered_at = registered_at
 
-        user = session.query(User).filter_by(username=username).first()
-        user.farcaster_address = farcaster_address
-        user.external_address = external_address
-        user.registered_at = registered_at
+                session.merge(user)
+                session.commit()
 
-        session.merge(user)
-        session.commit()
+                print(
+                    f"Updated {username} with {farcaster_address} {external_address} {registered_at}")
 
-        print(
-            f"Updated {username} with {farcaster_address} {external_address} {registered_at}")
+                time.sleep(1)
 
-        time.sleep(0.5)
+                success = True  # set flag to indicate success
+
+            except requests.exceptions.Timeout:
+                print(f"Request timed out for {username}. Retrying...")
+                continue
+
+    session.close()
 
 
 def insert_data_from_ensdata(engine):
@@ -117,36 +126,37 @@ def insert_data_from_ensdata(engine):
         User).filter_by(ens=None).filter(User.external_address != None).all()]
 
     for address in all_addresses:
-        result = requests.get(url + address)
-        data = result.json()
+        success = False  # flag to indicate whether the update was successful
+        while not success:
+            try:
+                result = requests.get(url + address, timeout=10)
+                data = result.json()
 
-        if data:
-            # user_data = {
-            #     'ens': data.get('ens'),
-            #     'url': data.get('url'),
-            #     'github': data.get('github'),
-            #     'twitter': data.get('twitter'),
-            #     'telegram': data.get('telegram'),
-            #     'email': data.get('email'),
-            #     'discord': data.get('discord')
-            # }
+                if data:
+                    user = session.query(User).filter_by(
+                        external_address=address).first()
+                    user.ens = data.get('ens')
+                    user.url = data.get('url')
+                    user.github = data.get('github')
+                    user.twitter = data.get('twitter')
+                    user.telegram = data.get('telegram')
+                    user.email = data.get('email')
+                    user.discord = data.get('discord')
 
-            user = session.query(User).filter_by(
-                external_address=address).first()
-            user.ens = data.get('ens')
-            user.url = data.get('url')
-            user.github = data.get('github')
-            user.twitter = data.get('twitter')
-            user.telegram = data.get('telegram')
-            user.email = data.get('email')
-            user.discord = data.get('discord')
+                    session.merge(user)
+                    session.commit()
 
-            session.merge(user)
-            session.commit()
+                    print(f"Updated {address} with {data}")
 
-            print(f"Updated {address} with {data}")
+                time.sleep(0.5)
 
-        time.sleep(0.5)
+                success = True  # set flag to indicate success
+
+            except requests.exceptions.Timeout:
+                print(f"Request timed out for {address}. Retrying...")
+                continue
+
+    session.close()
 
 
 def create_schema(engine):

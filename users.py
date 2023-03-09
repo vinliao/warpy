@@ -3,7 +3,7 @@ import os
 import requests
 from sqlalchemy.orm import sessionmaker
 from models import Base, User, Location
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, and_
 import time
 import re
 import asyncio
@@ -152,8 +152,9 @@ def insert_data_from_ensdata_async(engine):
             all_addresses = f.read().split(',')
             all_addresses = [address.strip() for address in all_addresses]
     else:
-        all_addresses = [u.external_address for u in session.query(
-            User).filter(User.external_address != None).all()]
+        all_addresses = [u.external_address for u in session.query(User).filter(
+            and_(User.external_address != None, User.ens == None)).all()]
+
         with open('ensdata_addresses.csv', 'w') as f:
             f.write(','.join(all_addresses))
 
@@ -252,8 +253,8 @@ engine = create_engine('sqlite:///data.db')
 # create_schema(engine)
 # insert_users_to_db(engine)
 # insert_data_from_searchcaster(engine)
-# insert_data_from_ensdata_async(engine)
-set_more_info_from_bio(engine)
+insert_data_from_ensdata_async(engine)
+# set_more_info_from_bio(engine)
 
 # todo:
 # 1. go through user, if it contains xxx.twitter or yyy.telegram, add it to the respective table

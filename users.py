@@ -6,6 +6,8 @@ from models import Base, User, Location
 from sqlalchemy import create_engine
 import time
 import re
+import asyncio
+import aiohttp
 
 load_dotenv()
 warpcast_hub_key = os.getenv("WARPCAST_HUB_KEY")
@@ -140,7 +142,7 @@ def insert_data_from_searchcaster(engine):
     session.close()
 
 
-def insert_data_from_ensdata(engine):
+def insert_data_from_ensdata_async(engine):
     url = 'https://ensdata.net/'
 
     session = sessionmaker(bind=engine)()
@@ -155,50 +157,58 @@ def insert_data_from_ensdata(engine):
         with open('ensdata_addresses.csv', 'w') as f:
             f.write(','.join(all_addresses))
 
-    for address in all_addresses:
-        success = False  # flag to indicate whether the update was successful
-        retries = 0  # counter for the number of retries
-        print(address)
-        while not success:
-            try:
-                result = requests.get(url + address, timeout=10)
-                data = result.json()
+    async def fetch(session, address):
+        try:
+            async with session.get(url + address, timeout=10) as response:
+                return await response.json()
+        except:
+            print(f"Timeout: {address}")
+            return None
 
-                if data:
-                    user = session.query(User).filter_by(
-                        external_address=address).first()
-                    user = update_user_data(user, get_ensdata_data(data))
+    async def run(addresses):
+        tasks = []
+        async with aiohttp.ClientSession() as session:
+            for address in addresses:
+                task = asyncio.ensure_future(fetch(session, address))
+                tasks.append(task)
 
-                    session.merge(user)
-                    session.commit()
+            responses = await asyncio.gather(*tasks)
+            return [r for r in responses if r is not None]
 
-                    print(f"Updated {address} with {data}")
+    def update_user(address, data):
+        user = session.query(User).filter_by(
+            external_address=address).first()
+        user = update_user_data(user, get_ensdata_data(data))
+        session.merge(user)
+        session.commit()
 
-                    # Remove the address from the CSV file
-                    if os.path.exists('ensdata_addresses.csv'):
-                        with open('ensdata_addresses.csv', 'r') as f:
-                            all_addresses = f.read().split(',')
-                            all_addresses = [address.strip()
-                                             for address in all_addresses]
-                        if address in all_addresses:
-                            print(
-                                f"{len(all_addresses)} addresses left to process...")
-                            all_addresses.remove(address)
-                            with open('ensdata_addresses.csv', 'w') as f:
-                                f.write(','.join(all_addresses))
+    def remove_address_from_csv(address):
+        if os.path.exists('ensdata_addresses.csv'):
+            with open('ensdata_addresses.csv', 'r') as f:
+                all_addresses = f.read().split(',')
+                all_addresses = [address.strip()
+                                 for address in all_addresses]
+            if address in all_addresses:
+                print(
+                    f"{len(all_addresses)} addresses left to process...")
+                all_addresses.remove(address)
+                with open('ensdata_addresses.csv', 'w') as f:
+                    f.write(','.join(all_addresses))
 
-                success = True  # set flag to indicate success
+    batch_size = 50
+    for i in range(0, len(all_addresses), batch_size):
+        batch = all_addresses[i:i + batch_size]
+        print(f"Processing batch {i} to {i + batch_size}...")
+        loop = asyncio.get_event_loop()
+        future = asyncio.ensure_future(run(batch))
+        responses = loop.run_until_complete(future)
 
-            except requests.exceptions.Timeout:
-                retries += 1
-                if retries == 3:
-                    print(
-                        f"Request timed out for {address} after 3 retries. Skipping to next address.")
-                    break  # skip to next address
-                else:
-                    print(
-                        f"Request timed out for {address}. Retrying ({retries}/3)...")
-                    continue
+        for address, data in zip(batch, responses):
+            if data:
+                update_user(address, data)
+                remove_address_from_csv(address)
+
+        time.sleep(1)
 
     session.close()
 
@@ -241,7 +251,7 @@ engine = create_engine('sqlite:///data.db')
 # create_schema(engine)
 # insert_users_to_db(engine)
 # insert_data_from_searchcaster(engine)
-insert_data_from_ensdata(engine)
+insert_data_from_ensdata_async(engine)
 
 # todo:
 # 1. go through user, if it contains xxx.twitter or yyy.telegram, add it to the respective table

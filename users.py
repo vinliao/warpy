@@ -145,17 +145,20 @@ def insert_data_from_ensdata(engine):
 
     session = sessionmaker(bind=engine)()
 
-    last_user = session.query(User).filter(
-        User.ens != None).order_by(User.fid).first()
-    all_addresses = [u.external_address for u in session.query(User).filter(
-        User.fid <= last_user.fid).filter(User.external_address != None).order_by(User.fid.desc()).all()]
-
-    # all_addresses = [u.external_address for u in session.query(User).filter(
-    #     user.ens != None).order_by(User.fid.desc()).all()]
+    if os.path.exists('ensdata_addresses.csv'):
+        with open('ensdata_addresses.csv', 'r') as f:
+            all_addresses = f.read().split(',')
+            all_addresses = [address.strip() for address in all_addresses]
+    else:
+        all_addresses = [u.external_address for u in session.query(
+            User).filter(User.external_address != None).all()]
+        with open('ensdata_addresses.csv', 'w') as f:
+            f.write(','.join(all_addresses))
 
     for address in all_addresses:
         success = False  # flag to indicate whether the update was successful
         retries = 0  # counter for the number of retries
+        print(address)
         while not success:
             try:
                 result = requests.get(url + address, timeout=10)
@@ -170,6 +173,19 @@ def insert_data_from_ensdata(engine):
                     session.commit()
 
                     print(f"Updated {address} with {data}")
+
+                    # Remove the address from the CSV file
+                    if os.path.exists('ensdata_addresses.csv'):
+                        with open('ensdata_addresses.csv', 'r') as f:
+                            all_addresses = f.read().split(',')
+                            all_addresses = [address.strip()
+                                             for address in all_addresses]
+                        if address in all_addresses:
+                            print(
+                                f"{len(all_addresses)} addresses left to process...")
+                            all_addresses.remove(address)
+                            with open('ensdata_addresses.csv', 'w') as f:
+                                f.write(','.join(all_addresses))
 
                 success = True  # set flag to indicate success
 
@@ -224,8 +240,8 @@ engine = create_engine('sqlite:///data.db')
 
 # create_schema(engine)
 # insert_users_to_db(engine)
-insert_data_from_searchcaster(engine)
-# insert_data_from_ensdata(engine)
+# insert_data_from_searchcaster(engine)
+insert_data_from_ensdata(engine)
 
 # todo:
 # 1. go through user, if it contains xxx.twitter or yyy.telegram, add it to the respective table

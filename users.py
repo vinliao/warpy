@@ -222,7 +222,7 @@ def set_more_info_from_bio(engine):
         if user.bio_text:
             bio_text = user.bio_text.lower()
 
-            if 'twitter' in bio_text:
+            if 'twitter' in bio_text and user.twitter is None:
                 twitter_username = re.search(r'(\S+)\.twitter', bio_text)
                 if twitter_username:
                     twitter_username = twitter_username.group(1)
@@ -231,7 +231,7 @@ def set_more_info_from_bio(engine):
                     # print(twitter_username)
                     user.twitter = twitter_username
 
-            if 'telegram' in bio_text:
+            if 'telegram' in bio_text and user.telegram is None:
                 telegram_username = re.search(r'(\S+)\.telegram', bio_text)
                 if telegram_username:
                     telegram_username = telegram_username.group(1)
@@ -252,7 +252,8 @@ engine = create_engine('sqlite:///data.db')
 # create_schema(engine)
 # insert_users_to_db(engine)
 # insert_data_from_searchcaster(engine)
-insert_data_from_ensdata_async(engine)
+# insert_data_from_ensdata_async(engine)
+set_more_info_from_bio(engine)
 
 # todo:
 # 1. go through user, if it contains xxx.twitter or yyy.telegram, add it to the respective table

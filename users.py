@@ -220,7 +220,7 @@ def create_schema(engine):
     Base.metadata.create_all(engine)
 
 
-engine = create_engine('sqlite:///data2.db')
+engine = create_engine('sqlite:///data.db')
 
 # create_schema(engine)
 # insert_users_to_db(engine)

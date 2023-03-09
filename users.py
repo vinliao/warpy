@@ -159,7 +159,7 @@ def insert_data_from_ensdata_async(engine):
 
     async def fetch(session, address):
         try:
-            async with session.get(url + address, timeout=10) as response:
+            async with session.get(url + address, timeout=5) as response:
                 return await response.json()
         except:
             print(f"Timeout: {address}")
@@ -203,10 +203,11 @@ def insert_data_from_ensdata_async(engine):
         future = asyncio.ensure_future(run(batch))
         responses = loop.run_until_complete(future)
 
-        for address, data in zip(batch, responses):
-            if data:
-                update_user(address, data)
-                remove_address_from_csv(address)
+        for response in responses:
+            current_address = response.get('address')
+            if current_address:
+                update_user(current_address, response)
+                remove_address_from_csv(current_address)
 
         time.sleep(1)
 

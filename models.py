@@ -1,4 +1,4 @@
-from sqlalchemy import Column, BigInteger, String, ForeignKey, Table, Integer
+from sqlalchemy import Column, BigInteger, String, ForeignKey, Table, Integer, Float
 from sqlalchemy.orm import relationship, declarative_base
 
 Base = declarative_base()
@@ -74,3 +74,24 @@ class User(Base):
     discord = Column(String, nullable=True)
 
     casts = relationship('Cast', back_populates='author')
+
+
+class EthTransaction(Base):
+    __tablename__ = 'eth_transactions'
+
+    hash = Column(String, primary_key=True)
+    address_fid = Column(BigInteger, ForeignKey('users.fid'), nullable=False)
+    address_external = Column(String, ForeignKey('users.external_address'), nullable=False)
+    address = relationship('User', backref='eth_transactions',
+                           foreign_keys=[address_external])
+    timestamp = Column(BigInteger)
+    block_num = Column(BigInteger)
+    from_address = Column(String)
+    to_address = Column(String)
+    value = Column(Float, nullable=True)
+    erc721_token_id = Column(String, nullable=True)
+    erc1155_metadata = Column(String, nullable=True)
+    token_id = Column(String, nullable=True)
+    asset = Column(String, nullable=True)
+    category = Column(String)
+

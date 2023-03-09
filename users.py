@@ -13,7 +13,7 @@ warpcast_hub_key = os.getenv("WARPCAST_HUB_KEY")
 
 def get_recent_users(cursor: str = None):
     # have cursor in url if cursor exists, use ternary
-    url = f"https://api.warpcast.com/v2/recent-users?cursor={cursor}&limit=1000" if cursor else "https://api.warpcast.com/v2/recent-users?limit=10"
+    url = f"https://api.warpcast.com/v2/recent-users?cursor={cursor}&limit=1000" if cursor else "https://api.warpcast.com/v2/recent-users?limit=1000"
 
     print(f"Fetching from {url}")
 
@@ -114,7 +114,7 @@ def insert_data_from_searchcaster(engine):
     session = sessionmaker(bind=engine)()
 
     all_usernames = [u.username for u in session.query(
-        User).filter(User.registered_at == -1).all()]
+        User).filter(User.registered_at == None).all()]
 
     for username in all_usernames:
         success = False  # flag to indicate whether the update was successful
@@ -220,12 +220,12 @@ def create_schema(engine):
     Base.metadata.create_all(engine)
 
 
-engine = create_engine('sqlite:///data.db')
+engine = create_engine('sqlite:///data2.db')
 
 # create_schema(engine)
 # insert_users_to_db(engine)
-# insert_data_from_searchcaster(engine)
-insert_data_from_ensdata(engine)
+insert_data_from_searchcaster(engine)
+# insert_data_from_ensdata(engine)
 
 # todo:
 # 1. go through user, if it contains xxx.twitter or yyy.telegram, add it to the respective table

@@ -62,9 +62,9 @@ class User(Base):
     bio_text = Column(String, nullable=True)
     location_place_id = Column(String, ForeignKey(
         'locations.place_id'), nullable=True)
-    farcaster_address = Column(String, nullable=False)
+    farcaster_address = Column(String, nullable=True)
     external_address = Column(String, nullable=True)
-    registered_at = Column(BigInteger, nullable=False)
+    registered_at = Column(BigInteger, nullable=True)
     ens = Column(String, nullable=True)
     url = Column(String, nullable=True)
     github = Column(String, nullable=True)

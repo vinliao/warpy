@@ -8,7 +8,7 @@ import time
 import asyncio
 import aiohttp
 import argparse
-from utils import not_none
+import sys
 
 load_dotenv()
 warpcast_hub_key = os.getenv("WARPCAST_HUB_KEY")
@@ -241,3 +241,22 @@ def refresh_user_data_ensdata(engine):
 
             time.sleep(1)
 
+
+parser = argparse.ArgumentParser()
+
+parser.add_argument('-a', '--all', action='store_true',
+                    help='Refresh user data from Warpcast, Searchcaster, and ENSData')
+
+args = parser.parse_args()
+
+if args.all or len(sys.argv) == 1:
+    print("Fetching new users from Warpcast, ENSData, and Searchcaster, and updating the DB...")
+    engine = create_engine('sqlite:///data.db')
+
+    # warpcast adds new users (new fids)
+    # searchcaster adds registered_at, external_address, and farcaster_address
+    # ensdata adds ens, url, github, twitter, telegram, email, and discord
+    refresh_user_data_warpcast(engine, warpcast_hub_key)
+    make_ensdata_fids(engine)
+    refresh_user_data_searchcaster(engine)
+    refresh_user_data_ensdata(engine)

@@ -1,6 +1,6 @@
 # Warpy (Beta)
 
-Warpy is a Python environment for doing data science with Farcaster data.
+Farcaster is an Ethereum-based programmable social network. Warpy is a Python environment for doing data science with Farcaster data.
 
 To get started:
 

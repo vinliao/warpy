@@ -31,3 +31,5 @@ build/
 .ipynb_checkpoints/
 
 prompt.txt
+
+ensdata_fids.csv

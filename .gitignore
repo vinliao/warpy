@@ -33,3 +33,5 @@ build/
 prompt.txt
 
 ensdata_fids.csv
+data.db
+data.bak.db

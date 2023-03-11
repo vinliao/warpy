@@ -3,12 +3,13 @@ import os
 from dotenv import load_dotenv
 import requests
 from sqlalchemy.orm import sessionmaker
-from models import Base, User, Location, EthTransaction
+from models import Base, User, EthTransaction
 from sqlalchemy import create_engine
 from datetime import datetime
 
 load_dotenv()
 
+# functions to fetch data from alchemy, and write to db (eth_transactions table)
 
 def get_nft_data_from_alchemy(address, page_key=None):
     url = f"https://eth-mainnet.g.alchemy.com/v2/{os.getenv('ALCHEMY_API_KEY')}"
@@ -102,7 +103,7 @@ def insert_transactions_to_db(engine, transactions):
         # filter out txs where hash already exists
         txs = list(filter(lambda tx: session.query(EthTransaction).filter(
             EthTransaction.hash == tx.hash).first() is None, txs))
-        
+
         # filter out duplciate hashes
         txs = list({tx.hash: tx for tx in txs}.values())
 

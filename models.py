@@ -45,7 +45,8 @@ class Location(Base):
     __tablename__ = 'locations'
     place_id = Column(String(255), primary_key=True)
     description = Column(String(255))
-    users = relationship('User', backref='location')
+    users = relationship(
+        'User', primaryjoin='foreign(User.location_place_id) == Location.place_id', backref='location')
 
 
 class User(Base):
@@ -70,7 +71,7 @@ class User(Base):
     email = Column(String(255), nullable=True)
     discord = Column(String(63), nullable=True)
 
-    casts = relationship('Cast', back_populates='author')
+    # casts = relationship('Cast', back_populates='author')
 
 # class EthTransaction(Base):
 #     __tablename__ = 'eth_transactions'

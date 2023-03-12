@@ -10,6 +10,7 @@ import aiohttp
 import argparse
 import sys
 from dataclasses import dataclass
+from utils import not_none
 from typing import Union
 
 load_dotenv()
@@ -45,6 +46,8 @@ class EnsdataUserClass:
     github: str
     twitter: str
     discord: str
+    email: str
+    telegram: str
 
 # ============================================================
 # ====================== WARPCAST ============================
@@ -54,7 +57,7 @@ class EnsdataUserClass:
 def get_users_from_warpcast(key: str, cursor: str = None):
     # have cursor in url if cursor exists, use ternary
 
-    url = f"https://api.warpcast.com/v2/recent-users?cursor={cursor}&limit=1000" if cursor else "https://api.warpcast.com/v2/recent-users?limit=1000"
+    url = f"https://api.warpcast.com/v2/recent-users?cursor={cursor}&limit=1000" if cursor else "https://api.warpcast.com/v2/recent-users?limit=10"
 
     print(f"Fetching from {url}")
 
@@ -116,7 +119,7 @@ def extract_warpcast_user_data(user):
         'follower_count': user['followerCount'],
         'following_count': user['followingCount'],
         'bio_text': user['profile']['bio']['text'] if 'bio' in user['profile'] else None,
-        'location_place_id': None # figure it out later
+        'location_place_id': None  # figure it out later
     }
 
 
@@ -131,48 +134,85 @@ def update_user_data(user, data):
 # ============================================================
 
 
-def refresh_user_data_searchcaster(engine):
-    url = 'https://searchcaster.xyz/api/profiles?username='
+async def get_single_user_from_searchcaster(username):
+    url = f'https://searchcaster.xyz/api/profiles?username={username}'
 
-    with sessionmaker(bind=engine)() as session:
-        all_usernames = [u.username for u in session.query(
-            User).filter(User.registered_at == None).all()]
+    print(f"Fetching {username} from {url}")
 
-        for username in all_usernames:
-            success = False  # flag to indicate whether the update was successful
-            while not success:
-                try:
-                    result = requests.get(url + username, timeout=10)
-                    data = result.json()
-                    item = data[0]
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as response:
+            json_data = await response.json()
+            return json_data[0]
 
-                    user = session.query(User).filter_by(
-                        username=username).first()
-                    user = update_user_data(
-                        user, extract_searchcaster_user_data(item))
-                    session.merge(user)
-                    session.commit()
 
-                    print(f"Updated {username} with {data}")
-
-                    success = True  # set flag to indicate success
-
-                except requests.exceptions.Timeout:
-                    print(f"Request timed out for {username}. Retrying...")
-                    continue
+async def get_users_from_searchcaster(usernames):
+    tasks = [asyncio.create_task(get_single_user_from_searchcaster(username))
+             for username in usernames]
+    users = await asyncio.gather(*tasks)
+    return users
 
 
 def extract_searchcaster_user_data(raw_data):
     return {
+        'fid': raw_data['body']['id'],
         'farcaster_address': raw_data['body']['address'],
         'external_address': raw_data['connectedAddress'],
         'registered_at': raw_data['body']['registeredAt']
     }
 
 
+# def refresh_user_data_searchcaster(engine):
+#     url = 'https://searchcaster.xyz/api/profiles?username='
+
+#     with sessionmaker(bind=engine)() as session:
+#         all_usernames = [u.username for u in session.query(
+#             User).filter(User.registered_at == None).all()]
+
+#         for username in all_usernames:
+#             success = False  # flag to indicate whether the update was successful
+#             while not success:
+#                 try:
+#                     result = requests.get(url + username, timeout=10)
+#                     data = result.json()
+#                     item = data[0]
+
+#                     user = session.query(User).filter_by(
+#                         username=username).first()
+#                     user = update_user_data(
+#                         user, extract_searchcaster_user_data(item))
+#                     session.merge(user)
+#                     session.commit()
+
+#                     print(f"Updated {username} with {data}")
+
+#                     success = True  # set flag to indicate success
+
+#                 except requests.exceptions.Timeout:
+#                     print(f"Request timed out for {username}. Retrying...")
+#                     continue
+
+
 # ============================================================
 # ====================== ENSDATA =============================
 # ============================================================
+
+
+async def get_single_user_from_ensdata(address: str):
+    url = f'https://ensdata.net/{address}'
+
+    print(f"Fetching {address} from {url}")
+
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as response:
+            json_data = await response.json()
+            return json_data
+
+
+async def get_users_from_ensdata(addresses: list[str]):
+    tasks = [asyncio.create_task(get_single_user_from_ensdata(address))
+             for address in addresses]
+    users = await asyncio.gather(*tasks)
+    return users
 
 
 def make_ensdata_fids(engine):
@@ -199,6 +239,7 @@ def get_ensdata_fids():
 
 def extract_ensdata_user_data(raw_data):
     return {
+        'address': raw_data.get('address'),
         'ens': raw_data.get('ens'),
         'url': raw_data.get('url'),
         'github': raw_data.get('github'),
@@ -209,72 +250,72 @@ def extract_ensdata_user_data(raw_data):
     }
 
 
-def refresh_user_data_ensdata(engine):
-    url = 'https://ensdata.net/'
+# def refresh_user_data_ensdata(engine):
+#     url = 'https://ensdata.net/'
 
-    with sessionmaker(bind=engine)() as session:
-        if os.path.exists('ensdata_fids.csv'):
-            all_fids = get_ensdata_fids()
-        else:
-            all_fids = make_ensdata_fids()
+#     with sessionmaker(bind=engine)() as session:
+#         if os.path.exists('ensdata_fids.csv'):
+#             all_fids = get_ensdata_fids()
+#         else:
+#             all_fids = make_ensdata_fids()
 
-        all_addresses = [u.external_address for u in session.query(User).filter(
-            User.fid.in_(all_fids), User.external_address.isnot(None)).all()]
+#         all_addresses = [u.external_address for u in session.query(User).filter(
+#             User.fid.in_(all_fids), User.external_address.isnot(None)).all()]
 
-        async def fetch(session, address):
-            try:
-                async with session.get(url + address, timeout=10) as response:
-                    return await response.json()
-            except:
-                print(f"Timeout: {address}")
-                return None
+#         async def fetch(session, address):
+#             try:
+#                 async with session.get(url + address, timeout=10) as response:
+#                     return await response.json()
+#             except:
+#                 print(f"Timeout: {address}")
+#                 return None
 
-        async def run(addresses):
-            tasks = []
-            async with aiohttp.ClientSession() as session:
-                for address in addresses:
-                    task = asyncio.ensure_future(fetch(session, address))
-                    tasks.append(task)
+#         async def run(addresses):
+#             tasks = []
+#             async with aiohttp.ClientSession() as session:
+#                 for address in addresses:
+#                     task = asyncio.ensure_future(fetch(session, address))
+#                     tasks.append(task)
 
-                responses = await asyncio.gather(*tasks)
-                return [r for r in responses if r is not None]
+#                 responses = await asyncio.gather(*tasks)
+#                 return [r for r in responses if r is not None]
 
-        def update_user(address, data):
-            user = session.query(User).filter_by(
-                external_address=address).first()
-            user = update_user_data(user, extract_ensdata_user_data(data))
-            session.merge(user)
-            session.commit()
+#         def update_user(address, data):
+#             user = session.query(User).filter_by(
+#                 external_address=address).first()
+#             user = update_user_data(user, extract_ensdata_user_data(data))
+#             session.merge(user)
+#             session.commit()
 
-        def remove_fid_from_csv(fid: str):
-            if os.path.exists('ensdata_fids.csv'):
-                with open('ensdata_fids.csv', 'r') as f:
-                    all_fids = f.read().split(',')
-                    all_fids = [fid.strip() for fid in all_fids]
-                if fid in all_fids:
-                    print(
-                        f"{len(all_fids)} fids left to process...")
-                    all_fids.remove(fid)
-                    with open('ensdata_fids.csv', 'w') as f:
-                        f.write(','.join(all_fids))
+#         def remove_fid_from_csv(fid: str):
+#             if os.path.exists('ensdata_fids.csv'):
+#                 with open('ensdata_fids.csv', 'r') as f:
+#                     all_fids = f.read().split(',')
+#                     all_fids = [fid.strip() for fid in all_fids]
+#                 if fid in all_fids:
+#                     print(
+#                         f"{len(all_fids)} fids left to process...")
+#                     all_fids.remove(fid)
+#                     with open('ensdata_fids.csv', 'w') as f:
+#                         f.write(','.join(all_fids))
 
-        batch_size = 50
-        for i in range(0, len(all_addresses), batch_size):
-            batch = all_addresses[i:i + batch_size]
-            print(f"Processing batch {i} to {i + batch_size}...")
-            loop = asyncio.get_event_loop()
-            future = asyncio.ensure_future(run(batch))
-            responses = loop.run_until_complete(future)
+#         batch_size = 50
+#         for i in range(0, len(all_addresses), batch_size):
+#             batch = all_addresses[i:i + batch_size]
+#             print(f"Processing batch {i} to {i + batch_size}...")
+#             loop = asyncio.get_event_loop()
+#             future = asyncio.ensure_future(run(batch))
+#             responses = loop.run_until_complete(future)
 
-            for response in responses:
-                current_address = response.get('address')
-                if current_address:
-                    update_user(current_address, response)
-                    fid = session.query(User).filter_by(
-                        external_address=current_address).first().fid
-                    remove_fid_from_csv(str(fid))
+#             for response in responses:
+#                 current_address = response.get('address')
+#                 if current_address:
+#                     update_user(current_address, response)
+#                     fid = session.query(User).filter_by(
+#                         external_address=current_address).first().fid
+#                     remove_fid_from_csv(str(fid))
 
-            time.sleep(1)
+#             time.sleep(1)
 
 
 parser = argparse.ArgumentParser()
@@ -283,37 +324,45 @@ parser.add_argument('-a', '--all', action='store_true',
                     help='Refresh user data from Warpcast, Searchcaster, and ENSData')
 parser.add_argument('--test', action='store_true',
                     help='For testing purposes')
+parser.add_argument('--test2', action='store_true',
+                    help='For testing purposes')
 
 args = parser.parse_args()
 
-if args.all or len(sys.argv) == 1:
-    print("Fetching new users from Warpcast, ENSData, and Searchcaster, and updating the DB...")
-    engine = create_engine('sqlite:///data.db')
+# if args.all or len(sys.argv) == 1:
+#     print("Fetching new users from Warpcast, ENSData, and Searchcaster, and updating the DB...")
+#     engine = create_engine('sqlite:///data.db')
 
-    # warpcast adds new users (new fids)
-    # searchcaster adds registered_at, external_address, and farcaster_address
-    # ensdata adds ens, url, github, twitter, telegram, email, and discord
-    refresh_user_data_warpcast(engine, warpcast_hub_key)
-    make_ensdata_fids(engine)
-    refresh_user_data_searchcaster(engine)
-    refresh_user_data_ensdata(engine)
+#     # warpcast adds new users (new fids)
+#     # searchcaster adds registered_at, external_address, and farcaster_address
+#     # ensdata adds ens, url, github, twitter, telegram, email, and discord
+#     refresh_user_data_warpcast(engine, warpcast_hub_key)
+#     make_ensdata_fids(engine)
+#     refresh_user_data_searchcaster(engine)
+#     refresh_user_data_ensdata(engine)
 
 if args.test:
-    data = get_users_from_warpcast(warpcast_hub_key)
-    user_data = list(map(extract_warpcast_user_data, data['users']))
+    warpcast_users = get_users_from_warpcast(warpcast_hub_key)
+    warpcast_data = list(
+        map(extract_warpcast_user_data, warpcast_users['users']))
     users = list(
-        map(lambda data: WarpcastUserClass(**data), user_data))
+        map(lambda data: WarpcastUserClass(**data), warpcast_data))
 
-    for user in users:
-        print(user.username)
+    usernames = [u.username for u in users]
+    searchcaster_users = asyncio.run(get_users_from_searchcaster(usernames))
+    searchcaster_data = list(
+        map(extract_searchcaster_user_data, searchcaster_users))
+    registered_ats = list(
+        map(lambda data: SearchcasterUserClass(**data), searchcaster_data))
+    print(registered_ats)
 
-    # # Open a CSV file for writing
-    # with open('users.csv', 'w', newline='') as csvfile:
-    #     writer = csv.writer(csvfile)
+    addresses = filter(not_none, [u.external_address for u in registered_ats])
+    print(addresses)
 
-    #     # Write the header row
-    #     writer.writerow(['fid', 'username', 'display_name', 'verified', 'pfp_url', 'follower_count', 'following_count', 'location', 'bio_text'])
+    ensdata_users = asyncio.run(get_users_from_ensdata(addresses))
+    ensdata_data = list(map(extract_ensdata_user_data, ensdata_users))
+    ens = list(map(lambda data: EnsdataUserClass(**data), ensdata_data))
 
-    #     # Write each user as a row in the CSV file
-    #     for user in users:
-    #         writer.writerow([user.fid, user.username, user.display_name, user.verified, user.pfp_url, user.follower_count, user.following_count, user.location, user.bio_text])
+    print(ens)
+
+    # todo: somehow combine all these things, then insert to db

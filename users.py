@@ -52,7 +52,6 @@ class UserClass:
     farcaster_address: str = None
     external_address: str = None
     registered_at: int = None
-    address: str = None
     ens: str = None
     url: str = None
     github: str = None
@@ -100,28 +99,6 @@ def get_all_users_from_warpcast(key: str):
     return users
 
 
-# def refresh_user_data_warpcast(engine: Engine, key: str, start_cursor: str = None):
-#     with sessionmaker(bind=engine)() as session:
-#         cursor = start_cursor
-#         while True:
-#             data = get_users_from_warpcast(key, cursor)
-#             users = data["users"]
-#             cursor = data.get("cursor")
-
-#             for user in users:
-#                 u = User(**extract_warpcast_user_data(user))
-#                 location = get_location(session, user)
-#                 u.location = location
-#                 session.merge(u)
-#             session.commit()
-
-#             if cursor is None:
-#                 break
-#             else:
-#                 time.sleep(1)  # add a delay to avoid hitting rate limit
-#                 continue
-
-
 def get_location(session: Session, user: User):
     if 'location' in user['profile']:
         place_id = user['profile']['location'].get('placeId')
@@ -143,19 +120,13 @@ def extract_warpcast_user_data(user):
         'fid': user['fid'],
         'username': user['username'],
         'display_name': user['displayName'],
-        'verified': user['pfp']['verified'] if 'pfp' in user else 0,
+        'verified': user['pfp']['verified'] if 'pfp' in user else False,
         'pfp_url': user['pfp']['url'] if 'pfp' in user else '',
         'follower_count': user['followerCount'],
         'following_count': user['followingCount'],
         'bio_text': user['profile']['bio']['text'] if 'bio' in user['profile'] else None,
         'location_place_id': None  # figure it out later
     }
-
-
-# def update_user_data(user, data):
-#     for attr, value in data.items():
-#         setattr(user, attr, value)
-#     return user
 
 
 # ============================================================
@@ -190,37 +161,6 @@ def extract_searchcaster_user_data(data) -> SearchcasterDataClass:
     )
 
 
-# def refresh_user_data_searchcaster(engine):
-#     url = 'https://searchcaster.xyz/api/profiles?username='
-
-#     with sessionmaker(bind=engine)() as session:
-#         all_usernames = [u.username for u in session.query(
-#             User).filter(User.registered_at == None).all()]
-
-#         for username in all_usernames:
-#             success = False  # flag to indicate whether the update was successful
-#             while not success:
-#                 try:
-#                     result = requests.get(url + username, timeout=10)
-#                     data = result.json()
-#                     item = data[0]
-
-#                     user = session.query(User).filter_by(
-#                         username=username).first()
-#                     user = update_user_data(
-#                         user, extract_searchcaster_user_data(item))
-#                     session.merge(user)
-#                     session.commit()
-
-#                     print(f"Updated {username} with {data}")
-
-#                     success = True  # set flag to indicate success
-
-#                 except requests.exceptions.Timeout:
-#                     print(f"Request timed out for {username}. Retrying...")
-#                     continue
-
-
 # ============================================================
 # ====================== ENSDATA =============================
 # ============================================================
@@ -244,28 +184,6 @@ async def get_users_from_ensdata(addresses: list[str]):
     return users
 
 
-# def make_ensdata_fids(engine):
-#     with sessionmaker(bind=engine)() as session:
-#         all_fids = [u.fid for u in session.query(User).filter(
-#             User.registered_at == None).all()]
-
-#         if len(all_fids) == 0:
-#             all_fids = [u.fid for u in session.query(User).filter(
-#                 and_(User.external_address != None, User.ens == None)).all()]
-
-#         with open('ensdata_fids.csv', 'w') as f:
-#             f.write(','.join(str(fid) for fid in all_fids))
-
-#         return all_fids
-
-
-# def get_ensdata_fids():
-#     with open('ensdata_fids.csv', 'r') as f:
-#         all_fids = f.read().split(',')
-#         all_fids = [int(fid.strip()) for fid in all_fids]
-#     return all_fids
-
-
 def extract_ensdata_user_data(raw_data) -> EnsdataDataClass:
     return EnsdataDataClass(
         address=raw_data.get('address'),
@@ -279,73 +197,9 @@ def extract_ensdata_user_data(raw_data) -> EnsdataDataClass:
     )
 
 
-# def refresh_user_data_ensdata(engine):
-#     url = 'https://ensdata.net/'
-
-#     with sessionmaker(bind=engine)() as session:
-#         if os.path.exists('ensdata_fids.csv'):
-#             all_fids = get_ensdata_fids()
-#         else:
-#             all_fids = make_ensdata_fids()
-
-#         all_addresses = [u.external_address for u in session.query(User).filter(
-#             User.fid.in_(all_fids), User.external_address.isnot(None)).all()]
-
-#         async def fetch(session, address):
-#             try:
-#                 async with session.get(url + address, timeout=10) as response:
-#                     return await response.json()
-#             except:
-#                 print(f"Timeout: {address}")
-#                 return None
-
-#         async def run(addresses):
-#             tasks = []
-#             async with aiohttp.ClientSession() as session:
-#                 for address in addresses:
-#                     task = asyncio.ensure_future(fetch(session, address))
-#                     tasks.append(task)
-
-#                 responses = await asyncio.gather(*tasks)
-#                 return [r for r in responses if r is not None]
-
-#         def update_user(address, data):
-#             user = session.query(User).filter_by(
-#                 external_address=address).first()
-#             user = update_user_data(user, extract_ensdata_user_data(data))
-#             session.merge(user)
-#             session.commit()
-
-#         def remove_fid_from_csv(fid: str):
-#             if os.path.exists('ensdata_fids.csv'):
-#                 with open('ensdata_fids.csv', 'r') as f:
-#                     all_fids = f.read().split(',')
-#                     all_fids = [fid.strip() for fid in all_fids]
-#                 if fid in all_fids:
-#                     print(
-#                         f"{len(all_fids)} fids left to process...")
-#                     all_fids.remove(fid)
-#                     with open('ensdata_fids.csv', 'w') as f:
-#                         f.write(','.join(all_fids))
-
-#         batch_size = 50
-#         for i in range(0, len(all_addresses), batch_size):
-#             batch = all_addresses[i:i + batch_size]
-#             print(f"Processing batch {i} to {i + batch_size}...")
-#             loop = asyncio.get_event_loop()
-#             future = asyncio.ensure_future(run(batch))
-#             responses = loop.run_until_complete(future)
-
-#             for response in responses:
-#                 current_address = response.get('address')
-#                 if current_address:
-#                     update_user(current_address, response)
-#                     fid = session.query(User).filter_by(
-#                         external_address=current_address).first().fid
-#                     remove_fid_from_csv(str(fid))
-
-#             time.sleep(1)
-
+# ============================================================
+# ====================== MAIN ================================
+# ============================================================
 
 parser = argparse.ArgumentParser()
 
@@ -356,6 +210,8 @@ parser.add_argument('--test', action='store_true',
 parser.add_argument('--test2', action='store_true',
                     help='For testing purposes')
 parser.add_argument('--test3', action='store_true',
+                    help='For testing purposes')
+parser.add_argument('--test4', action='store_true',
                     help='For testing purposes')
 
 args = parser.parse_args()
@@ -401,10 +257,6 @@ if args.test:
 
     print(ens)
 
-    # make user data class, some users may not have ensdata data or searchcaster data,
-    # so make sure the fid in searchcaster matches the fid in users, and the
-    # address in ensdata matches the external_address in users
-
     for user in users:
         for searchcaster_user in registered_ats:
             if user.fid == searchcaster_user.fid:
@@ -436,16 +288,23 @@ if args.test:
 if args.test2:
     users_filename = 'users.csv'
     if os.path.exists(users_filename):
-        # get 50 users from csv, get the searchcaster data, then the ensdata data
-        # then insert to db, then remove from csv
-
         with open(users_filename, mode='r') as csv_file:
             reader = csv.reader(csv_file)
+            next(reader)
             users = [UserClass(*u) for u in list(reader)]
+
+        # Fix types of UserClass attributes
+        for user in users:
+            user.fid = int(user.fid)
+            user.verified = bool(user.verified)
+            user.follower_count = int(user.follower_count)
+            user.following_count = int(user.following_count)
+            user.registered_at = int(
+                user.registered_at) if user.registered_at else None
 
         # loop through users in batches of 50
         while True:
-            current_users = users[:50]
+            current_users = users[:3]
             if len(current_users) == 0:
                 break
 
@@ -461,9 +320,11 @@ if args.test2:
             ensdata_data = list(
                 map(extract_ensdata_user_data, ensdata_users))
 
+            # seems like setting it like this is not setting the value properly
             for user in current_users:
                 for searchcaster_user in searchcaster_data:
                     if user.fid == searchcaster_user.fid:
+                        print(searchcaster_user.external_address)
                         user.external_address = searchcaster_user.external_address
                         user.farcaster_address = searchcaster_user.farcaster_address
                         user.registered_at = searchcaster_user.registered_at
@@ -480,7 +341,13 @@ if args.test2:
                         user.discord = ensdata_user.discord
                         break
 
-            print(current_users)
+            engine = create_engine(os.getenv('PLANETSCALE_URL'))
+            with sessionmaker(bind=engine)() as session:
+                user_models = list(
+                    map(lambda u: User(**asdict(u)), current_users))
+                session.bulk_save_objects(user_models)
+                session.commit()
+
             break
 
     else:

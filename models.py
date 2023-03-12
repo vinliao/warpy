@@ -1,4 +1,4 @@
-from sqlalchemy import Column, BigInteger, String, ForeignKey, Table, Integer, Float
+from sqlalchemy import Column, BigInteger, String, Boolean
 from sqlalchemy.orm import relationship, declarative_base
 
 Base = declarative_base()
@@ -54,7 +54,7 @@ class User(Base):
     fid = Column(BigInteger, primary_key=True)
     username = Column(String(50))
     display_name = Column(String(255))
-    verified = Column(Integer, default=0)
+    verified = Column(Boolean, default=False)
     pfp_url = Column(String(255), nullable=True)
     follower_count = Column(BigInteger)
     following_count = Column(BigInteger)

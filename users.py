@@ -9,29 +9,17 @@ import asyncio
 import aiohttp
 import argparse
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from utils import not_none
 from typing import Union
+import csv
 
 load_dotenv()
 warpcast_hub_key = os.getenv("WARPCAST_HUB_KEY")
 
 
 @dataclass(frozen=True)
-class WarpcastUserClass:
-    fid: int
-    username: str
-    display_name: str
-    verified: bool
-    pfp_url: str
-    follower_count: int
-    following_count: int
-    location_place_id: Union[str, None]
-    bio_text: str
-
-
-@dataclass(frozen=True)
-class SearchcasterUserClass:
+class SearchcasterDataClass:
     fid: int
     farcaster_address: str
     external_address: str
@@ -39,7 +27,7 @@ class SearchcasterUserClass:
 
 
 @dataclass(frozen=True)
-class EnsdataUserClass:
+class EnsdataDataClass:
     address: str
     ens: str
     url: str
@@ -81,7 +69,7 @@ class UserClass:
 def get_users_from_warpcast(key: str, cursor: str = None):
     # have cursor in url if cursor exists, use ternary
 
-    url = f"https://api.warpcast.com/v2/recent-users?cursor={cursor}&limit=1000" if cursor else "https://api.warpcast.com/v2/recent-users?limit=10"
+    url = f"https://api.warpcast.com/v2/recent-users?cursor={cursor}&limit=1000" if cursor else "https://api.warpcast.com/v2/recent-users?limit=1000"
 
     print(f"Fetching from {url}")
 
@@ -95,26 +83,43 @@ def get_users_from_warpcast(key: str, cursor: str = None):
             "cursor": json_data.get("next", {}).get('cursor') if json_data.get("next") else None}
 
 
-def refresh_user_data_warpcast(engine: Engine, key: str, start_cursor: str = None):
-    with sessionmaker(bind=engine)() as session:
-        cursor = start_cursor
-        while True:
-            data = get_users_from_warpcast(key, cursor)
-            users = data["users"]
-            cursor = data.get("cursor")
+def get_all_users_from_warpcast(key: str):
+    cursor = None
+    users = []
+    while True:
+        data = get_users_from_warpcast(key, cursor)
+        users += data["users"]
+        cursor = data.get("cursor")
 
-            for user in users:
-                u = User(**extract_warpcast_user_data(user))
-                location = get_location(session, user)
-                u.location = location
-                session.merge(u)
-            session.commit()
+        if cursor is None:
+            break
+        else:
+            time.sleep(1)  # add a delay to avoid hitting rate limit
+            continue
 
-            if cursor is None:
-                break
-            else:
-                time.sleep(1)  # add a delay to avoid hitting rate limit
-                continue
+    return users
+
+
+# def refresh_user_data_warpcast(engine: Engine, key: str, start_cursor: str = None):
+#     with sessionmaker(bind=engine)() as session:
+#         cursor = start_cursor
+#         while True:
+#             data = get_users_from_warpcast(key, cursor)
+#             users = data["users"]
+#             cursor = data.get("cursor")
+
+#             for user in users:
+#                 u = User(**extract_warpcast_user_data(user))
+#                 location = get_location(session, user)
+#                 u.location = location
+#                 session.merge(u)
+#             session.commit()
+
+#             if cursor is None:
+#                 break
+#             else:
+#                 time.sleep(1)  # add a delay to avoid hitting rate limit
+#                 continue
 
 
 def get_location(session: Session, user: User):
@@ -147,10 +152,10 @@ def extract_warpcast_user_data(user):
     }
 
 
-def update_user_data(user, data):
-    for attr, value in data.items():
-        setattr(user, attr, value)
-    return user
+# def update_user_data(user, data):
+#     for attr, value in data.items():
+#         setattr(user, attr, value)
+#     return user
 
 
 # ============================================================
@@ -176,13 +181,13 @@ async def get_users_from_searchcaster(usernames):
     return users
 
 
-def extract_searchcaster_user_data(raw_data):
-    return {
-        'fid': raw_data['body']['id'],
-        'farcaster_address': raw_data['body']['address'],
-        'external_address': raw_data['connectedAddress'],
-        'registered_at': raw_data['body']['registeredAt']
-    }
+def extract_searchcaster_user_data(data) -> SearchcasterDataClass:
+    return SearchcasterDataClass(
+        fid=data['body']['id'],
+        farcaster_address=data['body']['address'],
+        external_address=data['connectedAddress'],
+        registered_at=data['body']['registeredAt']
+    )
 
 
 # def refresh_user_data_searchcaster(engine):
@@ -239,39 +244,39 @@ async def get_users_from_ensdata(addresses: list[str]):
     return users
 
 
-def make_ensdata_fids(engine):
-    with sessionmaker(bind=engine)() as session:
-        all_fids = [u.fid for u in session.query(User).filter(
-            User.registered_at == None).all()]
+# def make_ensdata_fids(engine):
+#     with sessionmaker(bind=engine)() as session:
+#         all_fids = [u.fid for u in session.query(User).filter(
+#             User.registered_at == None).all()]
 
-        if len(all_fids) == 0:
-            all_fids = [u.fid for u in session.query(User).filter(
-                and_(User.external_address != None, User.ens == None)).all()]
+#         if len(all_fids) == 0:
+#             all_fids = [u.fid for u in session.query(User).filter(
+#                 and_(User.external_address != None, User.ens == None)).all()]
 
-        with open('ensdata_fids.csv', 'w') as f:
-            f.write(','.join(str(fid) for fid in all_fids))
+#         with open('ensdata_fids.csv', 'w') as f:
+#             f.write(','.join(str(fid) for fid in all_fids))
 
-        return all_fids
-
-
-def get_ensdata_fids():
-    with open('ensdata_fids.csv', 'r') as f:
-        all_fids = f.read().split(',')
-        all_fids = [int(fid.strip()) for fid in all_fids]
-    return all_fids
+#         return all_fids
 
 
-def extract_ensdata_user_data(raw_data):
-    return {
-        'address': raw_data.get('address'),
-        'ens': raw_data.get('ens'),
-        'url': raw_data.get('url'),
-        'github': raw_data.get('github'),
-        'twitter': raw_data.get('twitter'),
-        'telegram': raw_data.get('telegram'),
-        'email': raw_data.get('email'),
-        'discord': raw_data.get('discord')
-    }
+# def get_ensdata_fids():
+#     with open('ensdata_fids.csv', 'r') as f:
+#         all_fids = f.read().split(',')
+#         all_fids = [int(fid.strip()) for fid in all_fids]
+#     return all_fids
+
+
+def extract_ensdata_user_data(raw_data) -> EnsdataDataClass:
+    return EnsdataDataClass(
+        address=raw_data.get('address'),
+        ens=raw_data.get('ens'),
+        url=raw_data.get('url'),
+        github=raw_data.get('github'),
+        twitter=raw_data.get('twitter'),
+        telegram=raw_data.get('telegram'),
+        email=raw_data.get('email'),
+        discord=raw_data.get('discord')
+    )
 
 
 # def refresh_user_data_ensdata(engine):
@@ -350,6 +355,8 @@ parser.add_argument('--test', action='store_true',
                     help='For testing purposes')
 parser.add_argument('--test2', action='store_true',
                     help='For testing purposes')
+parser.add_argument('--test3', action='store_true',
+                    help='For testing purposes')
 
 args = parser.parse_args()
 
@@ -365,6 +372,11 @@ args = parser.parse_args()
 #     refresh_user_data_searchcaster(engine)
 #     refresh_user_data_ensdata(engine)
 
+
+def no_registered_at(u):
+    return u.registered_at is None
+
+
 if args.test:
     warpcast_users = get_users_from_warpcast(warpcast_hub_key)
     warpcast_data = list(
@@ -377,7 +389,7 @@ if args.test:
     searchcaster_data = list(
         map(extract_searchcaster_user_data, searchcaster_users))
     registered_ats = list(
-        map(lambda data: SearchcasterUserClass(**data), searchcaster_data))
+        map(lambda data: SearchcasterDataClass(**data), searchcaster_data))
     print(registered_ats)
 
     addresses = filter(not_none, [u.external_address for u in registered_ats])
@@ -385,7 +397,7 @@ if args.test:
 
     ensdata_users = asyncio.run(get_users_from_ensdata(addresses))
     ensdata_data = list(map(extract_ensdata_user_data, ensdata_users))
-    ens = list(map(lambda data: EnsdataUserClass(**data), ensdata_data))
+    ens = list(map(lambda data: EnsdataDataClass(**data), ensdata_data))
 
     print(ens)
 
@@ -412,9 +424,79 @@ if args.test:
                 user.discord = ensdata_user.discord
                 break
 
+    users = list(filter(no_registered_at, users))
     print(users)
 
     # insert this into db
 
     # todo: somehow combine all these things, then insert to db
     # do all these in batch of 50, insert to db, then sleep for 1 second
+
+
+if args.test2:
+    users_filename = 'users.csv'
+    if os.path.exists(users_filename):
+        # get 50 users from csv, get the searchcaster data, then the ensdata data
+        # then insert to db, then remove from csv
+
+        with open(users_filename, mode='r') as csv_file:
+            reader = csv.reader(csv_file)
+            users = [UserClass(*u) for u in list(reader)]
+
+        # loop through users in batches of 50
+        while True:
+            current_users = users[:50]
+            if len(current_users) == 0:
+                break
+
+            usernames = [u.username for u in current_users]
+            searchcaster_users = asyncio.run(
+                get_users_from_searchcaster(usernames))
+            searchcaster_data = list(
+                map(extract_searchcaster_user_data, searchcaster_users))
+
+            addresses = filter(
+                not_none, [u.external_address for u in searchcaster_data])
+            ensdata_users = asyncio.run(get_users_from_ensdata(addresses))
+            ensdata_data = list(
+                map(extract_ensdata_user_data, ensdata_users))
+
+            for user in current_users:
+                for searchcaster_user in searchcaster_data:
+                    if user.fid == searchcaster_user.fid:
+                        user.external_address = searchcaster_user.external_address
+                        user.farcaster_address = searchcaster_user.farcaster_address
+                        user.registered_at = searchcaster_user.registered_at
+                        break
+
+                for ensdata_user in ensdata_data:
+                    if user.external_address == ensdata_user.address:
+                        user.ens = ensdata_user.ens
+                        user.url = ensdata_user.url
+                        user.github = ensdata_user.github
+                        user.twitter = ensdata_user.twitter
+                        user.telegram = ensdata_user.telegram
+                        user.email = ensdata_user.email
+                        user.discord = ensdata_user.discord
+                        break
+
+            print(current_users)
+            break
+
+    else:
+        all_users = get_all_users_from_warpcast(warpcast_hub_key)
+        warpcast_data = list(
+            map(extract_warpcast_user_data, all_users))
+        users = list(
+            map(lambda data: UserClass(**data), warpcast_data))
+
+        engine = create_engine(os.getenv('PLANETSCALE_URL'))
+        with sessionmaker(bind=engine)() as session:
+            all_fids_in_db = [u.fid for u in session.query(User).all()]
+            users = list(filter(lambda u: u.fid not in all_fids_in_db, users))
+
+        with open(users_filename, mode='w', newline='') as csv_file:
+            writer = csv.writer(csv_file)
+            writer.writerow(UserClass.__annotations__.keys())
+            for user in users:
+                writer.writerow(asdict(user).values())

@@ -9,9 +9,42 @@ import asyncio
 import aiohttp
 import argparse
 import sys
+from dataclasses import dataclass
+from typing import Union
 
 load_dotenv()
 warpcast_hub_key = os.getenv("WARPCAST_HUB_KEY")
+
+
+@dataclass(frozen=True)
+class WarpcastUserClass:
+    fid: int
+    username: str
+    display_name: str
+    verified: bool
+    pfp_url: str
+    follower_count: int
+    following_count: int
+    location_place_id: Union[str, None]
+    bio_text: str
+
+
+@dataclass(frozen=True)
+class SearchcasterUserClass:
+    fid: int
+    farcaster_address: str
+    external_address: str
+    registered_at: int
+
+
+@dataclass(frozen=True)
+class EnsdataUserClass:
+    address: str
+    ens: str
+    url: str
+    github: str
+    twitter: str
+    discord: str
 
 # ============================================================
 # ====================== WARPCAST ============================
@@ -20,6 +53,7 @@ warpcast_hub_key = os.getenv("WARPCAST_HUB_KEY")
 
 def get_users_from_warpcast(key: str, cursor: str = None):
     # have cursor in url if cursor exists, use ternary
+
     url = f"https://api.warpcast.com/v2/recent-users?cursor={cursor}&limit=1000" if cursor else "https://api.warpcast.com/v2/recent-users?limit=1000"
 
     print(f"Fetching from {url}")
@@ -82,6 +116,7 @@ def extract_warpcast_user_data(user):
         'follower_count': user['followerCount'],
         'following_count': user['followingCount'],
         'bio_text': user['profile']['bio']['text'] if 'bio' in user['profile'] else None,
+        'location_place_id': None # figure it out later
     }
 
 
@@ -246,6 +281,8 @@ parser = argparse.ArgumentParser()
 
 parser.add_argument('-a', '--all', action='store_true',
                     help='Refresh user data from Warpcast, Searchcaster, and ENSData')
+parser.add_argument('--test', action='store_true',
+                    help='For testing purposes')
 
 args = parser.parse_args()
 
@@ -260,3 +297,23 @@ if args.all or len(sys.argv) == 1:
     make_ensdata_fids(engine)
     refresh_user_data_searchcaster(engine)
     refresh_user_data_ensdata(engine)
+
+if args.test:
+    data = get_users_from_warpcast(warpcast_hub_key)
+    user_data = list(map(extract_warpcast_user_data, data['users']))
+    users = list(
+        map(lambda data: WarpcastUserClass(**data), user_data))
+
+    for user in users:
+        print(user.username)
+
+    # # Open a CSV file for writing
+    # with open('users.csv', 'w', newline='') as csvfile:
+    #     writer = csv.writer(csvfile)
+
+    #     # Write the header row
+    #     writer.writerow(['fid', 'username', 'display_name', 'verified', 'pfp_url', 'follower_count', 'following_count', 'location', 'bio_text'])
+
+    #     # Write each user as a row in the CSV file
+    #     for user in users:
+    #         writer.writerow([user.fid, user.username, user.display_name, user.verified, user.pfp_url, user.follower_count, user.following_count, user.location, user.bio_text])

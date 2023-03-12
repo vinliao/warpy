@@ -49,6 +49,30 @@ class EnsdataUserClass:
     email: str
     telegram: str
 
+
+@dataclass
+class UserClass:
+    fid: int
+    username: str
+    display_name: str
+    verified: bool
+    pfp_url: str
+    follower_count: int
+    following_count: int
+    location_place_id: str = None
+    bio_text: str = None
+    farcaster_address: str = None
+    external_address: str = None
+    registered_at: int = None
+    address: str = None
+    ens: str = None
+    url: str = None
+    github: str = None
+    twitter: str = None
+    discord: str = None
+    email: str = None
+    telegram: str = None
+
 # ============================================================
 # ====================== WARPCAST ============================
 # ============================================================
@@ -346,7 +370,7 @@ if args.test:
     warpcast_data = list(
         map(extract_warpcast_user_data, warpcast_users['users']))
     users = list(
-        map(lambda data: WarpcastUserClass(**data), warpcast_data))
+        map(lambda data: UserClass(**data), warpcast_data))
 
     usernames = [u.username for u in users]
     searchcaster_users = asyncio.run(get_users_from_searchcaster(usernames))
@@ -365,4 +389,32 @@ if args.test:
 
     print(ens)
 
+    # make user data class, some users may not have ensdata data or searchcaster data,
+    # so make sure the fid in searchcaster matches the fid in users, and the
+    # address in ensdata matches the external_address in users
+
+    for user in users:
+        for searchcaster_user in registered_ats:
+            if user.fid == searchcaster_user.fid:
+                user.external_address = searchcaster_user.external_address
+                user.farcaster_address = searchcaster_user.farcaster_address
+                user.registered_at = searchcaster_user.registered_at
+                break
+
+        for ensdata_user in ens:
+            if user.external_address == ensdata_user.address:
+                user.ens = ensdata_user.ens
+                user.url = ensdata_user.url
+                user.github = ensdata_user.github
+                user.twitter = ensdata_user.twitter
+                user.telegram = ensdata_user.telegram
+                user.email = ensdata_user.email
+                user.discord = ensdata_user.discord
+                break
+
+    print(users)
+
+    # insert this into db
+
     # todo: somehow combine all these things, then insert to db
+    # do all these in batch of 50, insert to db, then sleep for 1 second

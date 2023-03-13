@@ -5,14 +5,13 @@ from dotenv import load_dotenv
 from sqlalchemy.orm import sessionmaker, Session
 from modelsold import Base as BaseOld, User as UserOld, Location as LocationOld
 from models import Base, User, Location, ExternalAddress
-from sqlalchemy import create_engine, and_, Engine, inspect
+from sqlalchemy import create_engine, and_, Engine, inspect, func
 import os
-import pymysql
 from dotenv import load_dotenv
 load_dotenv()
 
 engine = create_engine('sqlite:///data.db')
-mysql_engine = create_engine(os.getenv("PLANETSCALE_URL"))
+mysql_engine = create_engine(os.getenv("PLANETSCALE_URL"), echo=True)
 
 
 def inspect_db(engine):
@@ -54,22 +53,17 @@ def migrate_objects(engine, mysql_engine, model_old, model):
         session.commit()
 
 
-# migrate_objects(engine, mysql_engine, UserOld, User)
-
-users = get_all(mysql_engine, User)
-print(users)
-
 with sessionmaker(bind=mysql_engine)() as session:
-    # get all users where exteral address is not null
     users = session.query(User).filter(
-        and_(User.external_address != None, User.external_address != '')).all()
-    
-    all_external_addresses = session.query(ExternalAddress).all()
+        and_(User.external_address != None, User.external_address != '')
+    ).distinct(User.external_address).all()
 
-    # filter out users where external address is already in external address table
-    users = list(filter(lambda x: x.external_address not in list(map(lambda x: x.address, all_external_addresses)), users))
+    all_address_in_db = [
+        a.address for a in session.query(ExternalAddress).all()]
 
-    # fill the external address table from users
+    # filter out users where the address is already in the db
+    users = list(
+        filter(lambda x: x.external_address not in all_address_in_db, users))
 
     external_addresses = list(map(lambda x: ExternalAddress(
         address=x.external_address,

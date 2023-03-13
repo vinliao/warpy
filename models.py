@@ -63,14 +63,6 @@ class User(Base):
     farcaster_address = Column(String(63), nullable=True)
     external_address = Column(String(63), nullable=True)
     registered_at = Column(BigInteger, nullable=True)
-    ens = Column(String(255), nullable=True)
-    url = Column(String(255), nullable=True)
-    github = Column(String(255), nullable=True)
-    twitter = Column(String(63), nullable=True)
-    telegram = Column(String(63), nullable=True)
-    email = Column(String(255), nullable=True)
-    discord = Column(String(63), nullable=True)
-
     # casts = relationship('Cast', back_populates='author')
 
 

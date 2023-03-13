@@ -53,13 +53,6 @@ class UserClass:
     farcaster_address: str = None
     external_address: str = None
     registered_at: int = None
-    # ens: str = None
-    # url: str = None
-    # github: str = None
-    # twitter: str = None
-    # discord: str = None
-    # email: str = None
-    # telegram: str = None
 
 # ============================================================
 # ====================== WARPCAST ============================
@@ -100,7 +93,7 @@ def get_all_users_from_warpcast(key: str):
     return users
 
 
-def get_warpcast_location(user: User) -> Optional[Location]:
+def get_warpcast_location(user) -> Optional[Location]:
     if 'location' in user['profile']:
         place_id = user['profile']['location'].get('placeId')
         if place_id:
@@ -207,10 +200,6 @@ parser.add_argument('--ens', action='store_true',
 args = parser.parse_args()
 
 
-def no_registered_at(u):
-    return u.registered_at is None
-
-
 def fix_user_types(user: UserClass) -> UserClass:
     user.fid = int(user.fid)
     user.verified = bool(user.verified)
@@ -288,14 +277,25 @@ if args.farcaster:
             end_index += batch_size
 
     else:
-        all_users = get_all_users_from_warpcast(warpcast_hub_key)
+        all_users = get_users_from_warpcast(warpcast_hub_key)
+        all_users = all_users['users']
+        # all_users = get_all_users_from_warpcast(warpcast_hub_key)
         warpcast_data = [extract_warpcast_user_data(u) for u in all_users]
         users = [UserClass(**data) for data in warpcast_data]
 
-        engine = create_engine(os.getenv('PLANETSCALE_URL'))
+        warpcast_locations = [get_warpcast_location(u) for u in all_users]
+
+        engine = create_engine(os.getenv('PLANETSCALE_URL'), echo=True)
         with sessionmaker(bind=engine)() as session:
             all_fids_in_db = [u.fid for u in session.query(User).all()]
             users = [u for u in users if u.fid not in all_fids_in_db]
+
+            # filter out locations that are already in the database,
+            # then save to db
+            db_locations = session.query(Location).all()
+            locations = [l for l in warpcast_locations if l and l.place_id not in [
+                db_l.place_id for db_l in db_locations]]
+            session.bulk_save_objects(locations)
 
         with open(users_filename, mode='w', newline='') as csv_file:
             writer = csv.writer(csv_file)

@@ -21,6 +21,8 @@ parser.add_argument('--farcaster', action='store_true',
                     help='Refresh user data from Warpcast and Searchcaster')
 parser.add_argument('--ens', action='store_true',
                     help='Refresh user data from Ensdata')
+parser.add_argument('--query', nargs='+', type=str,
+                    help='Run query with the help of ChatGPT (ex: "give me all users with fid below 100")')
 
 args = parser.parse_args()
 
@@ -128,3 +130,30 @@ if args.farcaster:
 
 if args.ens:
     pass
+
+if args.query:
+    import openai
+
+    # set openai api key
+    openai.api_key = os.getenv('OPENAI_API_KEY')
+
+    system_prompt = "You are a SQL writer. If the user asks about anything than SQL, deny. You are a very good SQL writer. Nothing else."
+    initial_prompt = """
+    {'locations': ['- place_id (VARCHAR(255))', '- description (VARCHAR(255))'], 'users': ['- fid (BIGINT)', '- username (VARCHAR(50))', '- display_name (VARCHAR(255))', '- verified (BOOLEAN)', '- pfp_url (VARCHAR(255))', '- follower_count (BIGINT)', '- following_count (BIGINT)', '- bio_text (VARCHAR(255))', '- location_place_id (VARCHAR(255))', '- farcaster_address (VARCHAR(63))', '- external_address (VARCHAR(63))', '- registered_at (BIGINT)'], 'external_addresses': ['- address (VARCHAR(63))', '- ens (VARCHAR(255))', '- url (VARCHAR(255))', '- github (VARCHAR(255))', '- twitter (VARCHAR(63))', '- telegram (VARCHAR(63))', '- email (VARCHAR(255))', '- discord (VARCHAR(63))']}
+
+    Here's the database schema you're working with. Your job is to turn user queries (in natural language) to SQL. Only return the SQL and nothing else. Don't explain, don't say "here's your query." Just give the SQL. Say "Yes" if you understand.
+    """
+
+    completion = openai.ChatCompletion.create(
+        model="gpt-3.5-turbo",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": initial_prompt},
+            {"role": "assistant",
+                "content": "Yes."},
+            {"role": "user", "content": args.query[0]}
+        ]
+    )
+
+    reply = completion['choices'][0]['message']['content'].strip()
+    print(reply)

@@ -73,6 +73,21 @@ class User(Base):
 
     # casts = relationship('Cast', back_populates='author')
 
+
+class ExternalAddress(Base):
+    __tablename__ = 'external_addresses'
+    address = Column(String(63), primary_key=True)
+    ens = Column(String(255), nullable=True)
+    url = Column(String(255), nullable=True)
+    github = Column(String(255), nullable=True)
+    twitter = Column(String(63), nullable=True)
+    telegram = Column(String(63), nullable=True)
+    email = Column(String(255), nullable=True)
+    discord = Column(String(63), nullable=True)
+
+    user = relationship(
+        'User', primaryjoin='foreign(User.external_address) == ExternalAddress.address', backref='external_addresses')
+
 # class EthTransaction(Base):
 #     __tablename__ = 'eth_transactions'
 

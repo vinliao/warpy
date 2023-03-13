@@ -3,9 +3,10 @@ import argparse
 import os
 from sqlalchemy.orm import sessionmaker
 from models import Base, User, Location
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, text, func
 import asyncio
 import argparse
+from models import Base, User, Location, ExternalAddress
 from dataclasses import asdict
 import csv
 from dotenv import load_dotenv
@@ -129,7 +130,53 @@ if args.farcaster:
                 writer.writerow(asdict(user).values())
 
 if args.ens:
-    pass
+    engine = create_engine(os.getenv('PLANETSCALE_URL'))
+    # get all aexternal address from user where it doesn't exist on external address table
+
+    with sessionmaker(bind=engine)() as session:
+        duplicate_addresses = session.query(User.external_address, func.count(User.external_address)).group_by(
+            User.external_address).having(func.count(User.external_address) > 1).all()
+
+        external_addresses = session.query(ExternalAddress).filter(
+            ExternalAddress.address.in_([a[0] for a in duplicate_addresses])).all()
+
+        for ea in external_addresses:
+            print(ea.address)
+
+        print(f'Found {len(external_addresses)} addresses to check')
+
+        batch_size = 5
+        start_index = 0
+        end_index = batch_size
+        while start_index < len(external_addresses):
+            current_addresses = external_addresses[start_index:end_index]
+            if len(current_addresses) == 0:
+                break
+
+            addresses = [a.address for a in current_addresses]
+            ensdata_users = asyncio.run(get_users_from_ensdata(addresses))
+            ensdata_data = [extract_ensdata_user_data(
+                u) for u in ensdata_users]
+
+            for address in current_addresses:
+                for d in ensdata_data:
+                    if address.address == d.address:
+                        address.ens = d.ens
+                        address.url = d.url
+                        address.github = d.github
+                        address.twitter = d.twitter
+                        address.telegram = d.telegram
+                        address.email = d.email
+                        address.discord = d.discord
+
+                        if any([d.ens, d.url, d.github, d.twitter, d.telegram, d.email, d.discord]):
+                            print(f'Found data for {address.address}')
+                            session.merge(address)
+                        break
+            session.commit()
+
+            start_index = end_index
+            end_index += batch_size
 
 if args.query:
     import openai

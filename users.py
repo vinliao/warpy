@@ -211,6 +211,30 @@ def no_registered_at(u):
     return u.registered_at is None
 
 
+def fix_user_types(user: UserClass) -> UserClass:
+    user.fid = int(user.fid)
+    user.verified = bool(user.verified)
+    user.follower_count = int(user.follower_count)
+    user.following_count = int(user.following_count)
+    user.registered_at = int(
+        user.registered_at) if user.registered_at else None
+    return user
+
+
+def set_searchcaster_data(user: UserClass, data: list[SearchcasterDataClass]) -> UserClass:
+    if len(data) == 0:
+        return user
+
+    for d in data:
+        if user.fid == d.fid:
+            user.external_address = d.external_address
+            user.farcaster_address = d.farcaster_address
+            user.registered_at = d.registered_at
+            break
+
+    return user
+
+
 if args.farcaster:
     users_filename = 'users.csv'
     if os.path.exists(users_filename):
@@ -220,13 +244,7 @@ if args.farcaster:
             users = [UserClass(*u) for u in list(reader)]
 
         # Fix types of UserClass attributes
-        for user in users:
-            user.fid = int(user.fid)
-            user.verified = bool(user.verified)
-            user.follower_count = int(user.follower_count)
-            user.following_count = int(user.following_count)
-            user.registered_at = int(
-                user.registered_at) if user.registered_at else None
+        users = [fix_user_types(u) for u in users]
 
         batch_size = 2
         start_index = 0
@@ -239,18 +257,11 @@ if args.farcaster:
             usernames = [u.username for u in current_users]
             searchcaster_users = asyncio.run(
                 get_users_from_searchcaster(usernames))
-            searchcaster_data = list(
-                map(extract_searchcaster_user_data, searchcaster_users))
+            searchcaster_data = [extract_searchcaster_user_data(
+                u) for u in searchcaster_users]
 
-            for user in current_users:
-                for searchcaster_user in searchcaster_data:
-                    if user.fid == searchcaster_user.fid:
-                        print(searchcaster_user.external_address)
-                        user.external_address = searchcaster_user.external_address
-                        user.farcaster_address = searchcaster_user.farcaster_address
-                        user.registered_at = searchcaster_user.registered_at
-                        break
-
+            current_users = [set_searchcaster_data(
+                u, searchcaster_data) for u in current_users]
             engine = create_engine(os.getenv('PLANETSCALE_URL'))
             with sessionmaker(bind=engine)() as session:
                 user_models = list(
@@ -278,15 +289,13 @@ if args.farcaster:
 
     else:
         all_users = get_all_users_from_warpcast(warpcast_hub_key)
-        warpcast_data = list(
-            map(extract_warpcast_user_data, all_users))
-        users = list(
-            map(lambda data: UserClass(**data), warpcast_data))
+        warpcast_data = [extract_warpcast_user_data(u) for u in all_users]
+        users = [UserClass(**data) for data in warpcast_data]
 
         engine = create_engine(os.getenv('PLANETSCALE_URL'))
         with sessionmaker(bind=engine)() as session:
             all_fids_in_db = [u.fid for u in session.query(User).all()]
-            users = list(filter(lambda u: u.fid not in all_fids_in_db, users))
+            users = [u for u in users if u.fid not in all_fids_in_db]
 
         with open(users_filename, mode='w', newline='') as csv_file:
             writer = csv.writer(csv_file)

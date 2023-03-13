@@ -3,7 +3,7 @@ import argparse
 import os
 from sqlalchemy.orm import sessionmaker
 from models import Base, User, Location
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 import asyncio
 import argparse
 from dataclasses import asdict
@@ -138,11 +138,36 @@ if args.query:
     openai.api_key = os.getenv('OPENAI_API_KEY')
 
     system_prompt = "You are a SQL writer. If the user asks about anything than SQL, deny. You are a very good SQL writer. Nothing else."
-    initial_prompt = """
-    {'locations': ['- place_id (VARCHAR(255))', '- description (VARCHAR(255))'], 'users': ['- fid (BIGINT)', '- username (VARCHAR(50))', '- display_name (VARCHAR(255))', '- verified (BOOLEAN)', '- pfp_url (VARCHAR(255))', '- follower_count (BIGINT)', '- following_count (BIGINT)', '- bio_text (VARCHAR(255))', '- location_place_id (VARCHAR(255))', '- farcaster_address (VARCHAR(63))', '- external_address (VARCHAR(63))', '- registered_at (BIGINT)'], 'external_addresses': ['- address (VARCHAR(63))', '- ens (VARCHAR(255))', '- url (VARCHAR(255))', '- github (VARCHAR(255))', '- twitter (VARCHAR(63))', '- telegram (VARCHAR(63))', '- email (VARCHAR(255))', '- discord (VARCHAR(63))']}
+    initial_prompt = """Table: locations
+    - place_id (VARCHAR(255)) # example: ChIJyc_U0TTDQUcRYBEeDCnEAA, ChIJYeZuBI9YwokRjMDs_IEyCwo, ChIJYTN9T-plUjoRM9RjaAunYW4	
+    - description (VARCHAR(255)) # example: Budapest, Hungary; Manhattan, New York, NY, USA; Chennai, Tamil Nadu, India; Red Hook, NY, USA
+    Table: users
+    - fid (BIGINT)
+    - username (VARCHAR(50))
+    - display_name (VARCHAR(255))
+    - verified (BOOLEAN)
+    - pfp_url (VARCHAR(255))
+    - follower_count (BIGINT)
+    - following_count (BIGINT)
+    - bio_text (VARCHAR(255))
+    - location_place_id (VARCHAR(255))
+    - farcaster_address (VARCHAR(63))
+    - external_address (VARCHAR(63))
+    - registered_at (BIGINT)
+    Table: external_addresses
+    - address (VARCHAR(63))
+    - ens (VARCHAR(255))
+    - url (VARCHAR(255))
+    - github (VARCHAR(255))
+    - twitter (VARCHAR(63))
+    - telegram (VARCHAR(63))
+    - email (VARCHAR(255))
+    - discord (VARCHAR(63))
 
     Here's the database schema you're working with. Your job is to turn user queries (in natural language) to SQL. Only return the SQL and nothing else. Don't explain, don't say "here's your query." Just give the SQL. Say "Yes" if you understand.
     """
+
+    print("Sending query to ChatGPT...")
 
     completion = openai.ChatCompletion.create(
         model="gpt-3.5-turbo",
@@ -156,4 +181,14 @@ if args.query:
     )
 
     reply = completion['choices'][0]['message']['content'].strip()
-    print(reply)
+
+    print(f"SQL from ChatGPT: \n\n{reply}\n")
+    print(f"Running SQL...")
+
+    # take the raw sql query, then run it against the db
+    engine = create_engine(os.getenv('PLANETSCALE_URL'))
+    with sessionmaker(bind=engine)() as session:
+        result = session.execute(text(reply))
+        rows = result.fetchall()
+        for row in rows:
+            print(row)

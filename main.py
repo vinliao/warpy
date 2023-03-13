@@ -197,13 +197,13 @@ if args.query:
     - follower_count (BIGINT)
     - following_count (BIGINT)
     - bio_text (VARCHAR(255))
-    - location_place_id (VARCHAR(255))
-    - farcaster_address (VARCHAR(63))
-    - external_address (VARCHAR(63))
+    - location_place_id (VARCHAR(255)) # example: ChIJyc_U0TTDQUcRYBEeDCnEAA, ChIJYeZuBI9YwokRjMDs_IEyCwo, ChIJYTN9T-plUjoRM9RjaAunYW4	
+    - farcaster_address (VARCHAR(63)) # ethereum address, example: 0xaff2ab518ba962bd19f67e75ceb9de4da350b327, 0xdcb3beb907745e7ec9e3632508baf927b5950f67, 0x19793902549ac230d25fe5b5688cb30e0535fbed,
+    - external_address (VARCHAR(63)) # ethereum address, example: 0xaff2ab518ba962bd19f67e75ceb9de4da350b327, 0xdcb3beb907745e7ec9e3632508baf927b5950f67, 0x19793902549ac230d25fe5b5688cb30e0535fbed,
     - registered_at (BIGINT)
     Table: external_addresses
-    - address (VARCHAR(63))
-    - ens (VARCHAR(255))
+    - address (VARCHAR(63)) # ethereum address, example: 0xaff2ab518ba962bd19f67e75ceb9de4da350b327, 0xdcb3beb907745e7ec9e3632508baf927b5950f67, 0x19793902549ac230d25fe5b5688cb30e0535fbed,
+    - ens (VARCHAR(255)) # string that ends with .eth, example: whatever.eth, something.eth, else.eth
     - url (VARCHAR(255))
     - github (VARCHAR(255))
     - twitter (VARCHAR(63))

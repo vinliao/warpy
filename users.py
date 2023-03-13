@@ -11,7 +11,7 @@ import argparse
 import sys
 from dataclasses import dataclass, asdict
 from utils import not_none
-from typing import Union
+from typing import Union, Optional
 import csv
 
 load_dotenv()
@@ -26,6 +26,7 @@ class SearchcasterDataClass:
     registered_at: int
 
 
+# this is for the external address table
 @dataclass(frozen=True)
 class EnsdataDataClass:
     address: str
@@ -52,13 +53,13 @@ class UserClass:
     farcaster_address: str = None
     external_address: str = None
     registered_at: int = None
-    ens: str = None
-    url: str = None
-    github: str = None
-    twitter: str = None
-    discord: str = None
-    email: str = None
-    telegram: str = None
+    # ens: str = None
+    # url: str = None
+    # github: str = None
+    # twitter: str = None
+    # discord: str = None
+    # email: str = None
+    # telegram: str = None
 
 # ============================================================
 # ====================== WARPCAST ============================
@@ -99,19 +100,12 @@ def get_all_users_from_warpcast(key: str):
     return users
 
 
-def get_location(session: Session, user: User):
+def get_warpcast_location(user: User) -> Optional[Location]:
     if 'location' in user['profile']:
         place_id = user['profile']['location'].get('placeId')
         if place_id:
-            l = session.query(Location).filter_by(
-                place_id=place_id).first()
-            if not l:
-                l = Location(place_id=place_id,
-                             description=user['profile']['location']['description'])
-                session.merge(l)
-
-            return l
-
+            description = user['profile']['location'].get('description')
+            return Location(place_id=place_id, description=description)
     return None
 
 
@@ -125,7 +119,7 @@ def extract_warpcast_user_data(user):
         'follower_count': user['followerCount'],
         'following_count': user['followingCount'],
         'bio_text': user['profile']['bio']['text'] if 'bio' in user['profile'] else None,
-        'location_place_id': None  # figure it out later
+        'location_place_id': user['profile']['location']['placeId'] if 'location' in user['profile'] else None
     }
 
 
@@ -205,87 +199,19 @@ parser = argparse.ArgumentParser()
 
 parser.add_argument('-a', '--all', action='store_true',
                     help='Refresh user data from Warpcast, Searchcaster, and ENSData')
-parser.add_argument('--test', action='store_true',
-                    help='For testing purposes')
-parser.add_argument('--test2', action='store_true',
-                    help='For testing purposes')
-parser.add_argument('--test3', action='store_true',
-                    help='For testing purposes')
-parser.add_argument('--test4', action='store_true',
-                    help='For testing purposes')
+parser.add_argument('--farcaster', action='store_true',
+                    help='Refresh user data from Warpcast and Searchcaster')
+parser.add_argument('--ens', action='store_true',
+                    help='Refresh user data from Ensdata')
 
 args = parser.parse_args()
-
-# if args.all or len(sys.argv) == 1:
-#     print("Fetching new users from Warpcast, ENSData, and Searchcaster, and updating the DB...")
-#     engine = create_engine('sqlite:///data.db')
-
-#     # warpcast adds new users (new fids)
-#     # searchcaster adds registered_at, external_address, and farcaster_address
-#     # ensdata adds ens, url, github, twitter, telegram, email, and discord
-#     refresh_user_data_warpcast(engine, warpcast_hub_key)
-#     make_ensdata_fids(engine)
-#     refresh_user_data_searchcaster(engine)
-#     refresh_user_data_ensdata(engine)
 
 
 def no_registered_at(u):
     return u.registered_at is None
 
 
-if args.test:
-    warpcast_users = get_users_from_warpcast(warpcast_hub_key)
-    warpcast_data = list(
-        map(extract_warpcast_user_data, warpcast_users['users']))
-    users = list(
-        map(lambda data: UserClass(**data), warpcast_data))
-
-    usernames = [u.username for u in users]
-    searchcaster_users = asyncio.run(get_users_from_searchcaster(usernames))
-    searchcaster_data = list(
-        map(extract_searchcaster_user_data, searchcaster_users))
-    registered_ats = list(
-        map(lambda data: SearchcasterDataClass(**data), searchcaster_data))
-    print(registered_ats)
-
-    addresses = filter(not_none, [u.external_address for u in registered_ats])
-    print(addresses)
-
-    ensdata_users = asyncio.run(get_users_from_ensdata(addresses))
-    ensdata_data = list(map(extract_ensdata_user_data, ensdata_users))
-    ens = list(map(lambda data: EnsdataDataClass(**data), ensdata_data))
-
-    print(ens)
-
-    for user in users:
-        for searchcaster_user in registered_ats:
-            if user.fid == searchcaster_user.fid:
-                user.external_address = searchcaster_user.external_address
-                user.farcaster_address = searchcaster_user.farcaster_address
-                user.registered_at = searchcaster_user.registered_at
-                break
-
-        for ensdata_user in ens:
-            if user.external_address == ensdata_user.address:
-                user.ens = ensdata_user.ens
-                user.url = ensdata_user.url
-                user.github = ensdata_user.github
-                user.twitter = ensdata_user.twitter
-                user.telegram = ensdata_user.telegram
-                user.email = ensdata_user.email
-                user.discord = ensdata_user.discord
-                break
-
-    users = list(filter(no_registered_at, users))
-    print(users)
-
-    # insert this into db
-
-    # todo: somehow combine all these things, then insert to db
-    # do all these in batch of 50, insert to db, then sleep for 1 second
-
-
-if args.test2:
+if args.farcaster:
     users_filename = 'users.csv'
     if os.path.exists(users_filename):
         with open(users_filename, mode='r') as csv_file:
@@ -302,9 +228,11 @@ if args.test2:
             user.registered_at = int(
                 user.registered_at) if user.registered_at else None
 
-        # loop through users in batches of 50
-        while True:
-            current_users = users[:3]
+        batch_size = 2
+        start_index = 0
+        end_index = batch_size
+        while start_index < len(users):
+            current_users = users[start_index:end_index]
             if len(current_users) == 0:
                 break
 
@@ -314,13 +242,6 @@ if args.test2:
             searchcaster_data = list(
                 map(extract_searchcaster_user_data, searchcaster_users))
 
-            addresses = filter(
-                not_none, [u.external_address for u in searchcaster_data])
-            ensdata_users = asyncio.run(get_users_from_ensdata(addresses))
-            ensdata_data = list(
-                map(extract_ensdata_user_data, ensdata_users))
-
-            # seems like setting it like this is not setting the value properly
             for user in current_users:
                 for searchcaster_user in searchcaster_data:
                     if user.fid == searchcaster_user.fid:
@@ -330,17 +251,6 @@ if args.test2:
                         user.registered_at = searchcaster_user.registered_at
                         break
 
-                for ensdata_user in ensdata_data:
-                    if user.external_address == ensdata_user.address:
-                        user.ens = ensdata_user.ens
-                        user.url = ensdata_user.url
-                        user.github = ensdata_user.github
-                        user.twitter = ensdata_user.twitter
-                        user.telegram = ensdata_user.telegram
-                        user.email = ensdata_user.email
-                        user.discord = ensdata_user.discord
-                        break
-
             engine = create_engine(os.getenv('PLANETSCALE_URL'))
             with sessionmaker(bind=engine)() as session:
                 user_models = list(
@@ -348,7 +258,23 @@ if args.test2:
                 session.bulk_save_objects(user_models)
                 session.commit()
 
-            break
+            # open the CSV file for reading and writing
+            with open(users_filename, mode='r') as csv_file:
+                reader = csv.DictReader(csv_file)
+                fieldnames = reader.fieldnames
+
+                # filter out the current_users and get the remaining users
+                remaining_users = [row for row in reader if row['username'] not in [
+                    u.username for u in current_users]]
+
+            # open the CSV file for writing and write the remaining users
+            with open(users_filename, mode='w', newline='') as csv_file:
+                writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+                writer.writeheader()
+                writer.writerows(remaining_users)
+
+            start_index = end_index
+            end_index += batch_size
 
     else:
         all_users = get_all_users_from_warpcast(warpcast_hub_key)
@@ -367,3 +293,6 @@ if args.test2:
             writer.writerow(UserClass.__annotations__.keys())
             for user in users:
                 writer.writerow(asdict(user).values())
+
+if args.ens:
+    pass

@@ -1,4 +1,5 @@
 from users import *
+from casts import *
 import argparse
 import os
 from sqlalchemy.orm import sessionmaker
@@ -202,11 +203,11 @@ if args.cast:
     # get cast with the latest timestmap
     engine = create_engine(os.getenv('PLANETSCALE_URL'))
     with sessionmaker(bind=engine)() as session:
-        cast = session.query(Cast).order_by(Cast.timestamp.desc()).first()
+        # db_latest_cast = session.query(Cast).order_by(Cast.timestamp.desc()).first()
 
-        # get all casts from warpcast (while), when timestamp is lower than the latest cast, break
-        while True:
-            pass
+        casts = get_all_casts_from_warpcast(warpcast_hub_key, 1678678168000)
+        print(len(casts))
+
 
 if args.query:
     import openai

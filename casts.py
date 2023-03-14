@@ -30,7 +30,7 @@ class CastDataClass:
 def get_casts_from_warpcast(key: str, cursor: str = None):
     # have cursor in url if cursor exists, use ternary
 
-    url = f"https://api.warpcast.com/v2/recent-casts?cursor={cursor}&limit=1000" if cursor else "https://api.warpcast.com/v2/recent-casts?limit=5"
+    url = f"https://api.warpcast.com/v2/recent-casts?cursor={cursor}&limit=1000" if cursor else "https://api.warpcast.com/v2/recent-casts?limit=1000"
 
     print(f"Fetching from {url}")
 
@@ -44,12 +44,21 @@ def get_casts_from_warpcast(key: str, cursor: str = None):
             "cursor": json_data.get("next", {}).get('cursor') if json_data.get("next") else None}
 
 
-def get_all_casts_from_warpcast(key: str):
+def get_all_casts_from_warpcast(key: str, timestamp: int):
     cursor = None
-    casts = []
+    cast_arr = []
     while True:
         data = get_casts_from_warpcast(key, cursor)
-        casts += data["casts"]
+
+        casts = [extract_warpcast_cast_data(cast) for cast in data['casts']]
+
+        print(f"timestamp: {timestamp}, cast timestamp: {casts[0].timestamp}")
+
+        if casts[0].timestamp < timestamp:
+            break
+
+        cast_arr.extend(casts)
+
         cursor = data.get("cursor")
 
         if cursor is None:
@@ -58,7 +67,7 @@ def get_all_casts_from_warpcast(key: str):
             time.sleep(1)  # add a delay to avoid hitting rate limit
             continue
 
-    return casts
+    return cast_arr
 
 
 def extract_warpcast_cast_data(cast):
@@ -72,10 +81,9 @@ def extract_warpcast_cast_data(cast):
     )
 
 
-data = get_casts_from_warpcast(warpcast_hub_key)
-cast_data = [extract_warpcast_cast_data(cast) for cast in data['casts']]
-# turn cast to sqlalchemy model, use **
-casts = [Cast(**asdict(cast)) for cast in cast_data]
+# data = get_casts_from_warpcast(warpcast_hub_key)
+# # turn cast to sqlalchemy model, use **
+# casts = [Cast(**asdict(cast)) for cast in cast_data]
 
-print(casts)
-# insert this to db or soemthing
+# print(casts)
+# # insert this to db or soemthing

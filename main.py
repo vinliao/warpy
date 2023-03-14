@@ -18,10 +18,12 @@ parser = argparse.ArgumentParser()
 
 parser.add_argument('-a', '--all', action='store_true',
                     help='Refresh user data from Warpcast, Searchcaster, and ENSData')
-parser.add_argument('--farcaster', action='store_true',
+parser.add_argument('--user', action='store_true',
                     help='Refresh user data from Warpcast and Searchcaster')
 parser.add_argument('--ens', action='store_true',
                     help='Refresh user data from Ensdata')
+parser.add_argument('--cast', action='store_true',
+                    help='Refresh cast data from Warpcast')
 parser.add_argument('--query', nargs='+', type=str,
                     help='Run query with the help of ChatGPT (ex: "give me all users with fid below 100")')
 
@@ -52,7 +54,17 @@ def set_searchcaster_data(user: UserClass, data: list[SearchcasterDataClass]) ->
     return user
 
 
-if args.farcaster:
+"""
+Index users from Warpcast and Searchcaster:
+
+1. get all users from Warpcast
+2. get all locations, save to db
+3. check all user against db, filter out users that are already in the db
+4. save users to csv
+5. for each user, get registered_at, external_address, farcaster_address from Searchcaster
+6. save users to db
+"""
+if args.user:
     users_filename = 'users.csv'
     engine = create_engine(os.getenv('PLANETSCALE_URL'), echo=True)
 
@@ -86,12 +98,12 @@ if args.farcaster:
             for user in users:
                 writer.writerow(asdict(user).values())
 
+    # index users from csv
     with open(users_filename, mode='r') as csv_file:
         reader = csv.reader(csv_file)
         next(reader)
         users = [UserClass(*u) for u in list(reader)]
 
-    # Fix types of UserClass attributes
     users = [fix_user_types(u) for u in users]
 
     batch_size = 10
@@ -100,8 +112,6 @@ if args.farcaster:
     while start_index < len(users):
         current_users = users[start_index:end_index]
         if len(current_users) == 0:
-            # delete the csv file
-            os.remove(users_filename)
             break
 
         usernames = [u.username for u in current_users]
@@ -136,7 +146,16 @@ if args.farcaster:
         start_index = end_index
         end_index += batch_size
 
+    # delete the csv file when it's all indexed
+    os.remove(users_filename)
 
+"""
+Index ENS data from ensdata.net
+1. get all users from db where external_address is not null 
+    and external_address is not in external addresstable 
+2. get all data from ensdata.net
+3. save to db
+"""
 if args.ens:
     engine = create_engine(os.getenv('PLANETSCALE_URL'))
 
@@ -178,6 +197,9 @@ if args.ens:
 
             start_index = end_index
             end_index += batch_size
+
+if args.cast:
+    pass
 
 if args.query:
     import openai

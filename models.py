@@ -11,27 +11,6 @@ Base = declarative_base()
 #                            )
 
 
-# class Cast(Base):
-#     __tablename__ = 'casts'
-#     hash = Column(String, primary_key=True)
-#     thread_hash = Column(String, ForeignKey(
-#         'casts.hash'))
-#     parent_hash = Column(String, ForeignKey(
-#         'casts.hash'), nullable=True)
-#     text = Column(String)
-#     timestamp = Column(BigInteger)
-#     author_fid = Column(BigInteger, ForeignKey(
-#         'users.fid'))
-#     author = relationship('User', back_populates='casts')
-#     reactions = relationship('Reaction', back_populates='target')
-#     children_hashes = relationship("Cast", secondary=parent_association,
-#                                    primaryjoin=(
-#                                        hash == parent_association.c.parent_hash),
-#                                    secondaryjoin=(
-#                                        hash == parent_association.c.cast_hash),
-#                                    backref="parent_casts")
-
-
 # class Reaction(Base):
 #     __tablename__ = 'reactions'
 #     hash = Column(String, primary_key=True)
@@ -41,12 +20,20 @@ Base = declarative_base()
 #     author_fid = Column(BigInteger, ForeignKey('users.fid'))
 #     target = relationship('Cast', back_populates='reactions')
 
-class Location(Base):
-    __tablename__ = 'locations'
-    place_id = Column(String(255), primary_key=True)
-    description = Column(String(255))
-    users = relationship(
-        'User', primaryjoin='foreign(User.location_place_id) == Location.place_id', backref='location')
+class Cast(Base):
+    __tablename__ = 'casts'
+    hash = Column(String(127), primary_key=True)
+    thread_hash = Column(String(127), nullable=False)
+    parent_hash = Column(String(127), nullable=True)
+    text = Column(String(511), nullable=False)
+    timestamp = Column(BigInteger, nullable=False)
+    author_fid = Column(BigInteger, nullable=False)
+    author = relationship(
+        'User', primaryjoin='Cast.author_fid == foreign(User.fid)', remote_side='User.fid')
+    parent = relationship('Cast', primaryjoin='Cast.parent_hash == foreign(Cast.hash)', remote_side=[
+                          hash], backref='children')
+    thread = relationship('Cast', primaryjoin='Cast.thread_hash == foreign(Cast.hash)', remote_side=[
+                          hash], backref='descendant')
 
 
 class User(Base):
@@ -63,7 +50,16 @@ class User(Base):
     farcaster_address = Column(String(63), nullable=True)
     external_address = Column(String(63), nullable=True)
     registered_at = Column(BigInteger, nullable=True)
-    # casts = relationship('Cast', back_populates='author')
+    casts = relationship(
+        'Cast', primaryjoin='User.fid == foreign(Cast.author_fid)', backref='user')
+
+
+class Location(Base):
+    __tablename__ = 'locations'
+    place_id = Column(String(255), primary_key=True)
+    description = Column(String(255))
+    users = relationship(
+        'User', primaryjoin='foreign(User.location_place_id) == Location.place_id', backref='location')
 
 
 class ExternalAddress(Base):

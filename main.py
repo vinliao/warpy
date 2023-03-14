@@ -261,7 +261,6 @@ if args.query:
         result = session.execute(text(reply))
 
         # if result returns row
-        if result.returns_rows:
-            rows = result.fetchall()
-            for row in rows:
-                print(row)
+        rows = result.fetchall()
+        for row in rows:
+            print(row)

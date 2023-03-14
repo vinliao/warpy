@@ -171,57 +171,6 @@ if args.ens:
             start_index = end_index
             end_index += batch_size
 
-
-# # hacky code to fix duplicate external addresses, might delete later
-# if args.ensold:
-#     engine = create_engine(os.getenv('PLANETSCALE_URL'))
-#     # get all aexternal address from user where it doesn't exist on external address table
-
-#     with sessionmaker(bind=engine)() as session:
-#         duplicate_addresses = session.query(User.external_address, func.count(User.external_address)).group_by(
-#             User.external_address).having(func.count(User.external_address) > 1).all()
-
-#         external_addresses = session.query(ExternalAddress).filter(
-#             ExternalAddress.address.in_([a[0] for a in duplicate_addresses])).all()
-
-#         for ea in external_addresses:
-#             print(ea.address)
-
-#         print(f'Found {len(external_addresses)} addresses to check')
-
-#         batch_size = 5
-#         start_index = 0
-#         end_index = batch_size
-#         while start_index < len(external_addresses):
-#             current_addresses = external_addresses[start_index:end_index]
-#             if len(current_addresses) == 0:
-#                 break
-
-#             addresses = [a.address for a in current_addresses]
-#             ensdata_users = asyncio.run(get_users_from_ensdata(addresses))
-#             ensdata_data = [extract_ensdata_user_data(
-#                 u) for u in ensdata_users]
-
-#             for address in current_addresses:
-#                 for d in ensdata_data:
-#                     if address.address == d.address:
-#                         address.ens = d.ens
-#                         address.url = d.url
-#                         address.github = d.github
-#                         address.twitter = d.twitter
-#                         address.telegram = d.telegram
-#                         address.email = d.email
-#                         address.discord = d.discord
-
-#                         if any([d.ens, d.url, d.github, d.twitter, d.telegram, d.email, d.discord]):
-#                             print(f'Found data for {address.address}')
-#                             session.merge(address)
-#                         break
-#             session.commit()
-
-#             start_index = end_index
-#             end_index += batch_size
-
 if args.query:
     import openai
 
@@ -255,7 +204,11 @@ if args.query:
     - email (VARCHAR(255))
     - discord (VARCHAR(63))
 
-    Here's the database schema you're working with. Your job is to turn user queries (in natural language) to SQL. Only return the SQL and nothing else. Don't explain, don't say "here's your query." Just give the SQL. Say "Yes" if you understand.
+    Here's the database schema you're working with. Your job is to turn user queries (in natural language) to SQL. Only return the SQL and nothing else. Don't explain, don't say "here's your query." Just give the SQL. 
+
+    Some explanations: "users" table contain data about Farcaster users; "external_addresses" table contain addresses that are connected to Farcaster (and other additional information); each external address can own multiple Farcaster accounts; "locations" table contain data about places where Farcaster users are located.
+
+    Say "Yes" if you understand.
     """
 
     print("Sending query to ChatGPT...")

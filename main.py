@@ -54,64 +54,21 @@ def set_searchcaster_data(user: UserClass, data: list[SearchcasterDataClass]) ->
 
 if args.farcaster:
     users_filename = 'users.csv'
-    if os.path.exists(users_filename):
-        with open(users_filename, mode='r') as csv_file:
-            reader = csv.reader(csv_file)
-            next(reader)
-            users = [UserClass(*u) for u in list(reader)]
+    engine = create_engine(os.getenv('PLANETSCALE_URL'), echo=True)
 
-        # Fix types of UserClass attributes
-        users = [fix_user_types(u) for u in users]
-
-        batch_size = 2
-        start_index = 0
-        end_index = batch_size
-        while start_index < len(users):
-            current_users = users[start_index:end_index]
-            if len(current_users) == 0:
-                break
-
-            usernames = [u.username for u in current_users]
-            searchcaster_users = asyncio.run(
-                get_users_from_searchcaster(usernames))
-            searchcaster_data = [extract_searchcaster_user_data(
-                u) for u in searchcaster_users]
-
-            current_users = [set_searchcaster_data(
-                u, searchcaster_data) for u in current_users]
-            engine = create_engine(os.getenv('PLANETSCALE_URL'))
-            with sessionmaker(bind=engine)() as session:
-                user_models = list(
-                    map(lambda u: User(**asdict(u)), current_users))
-                session.bulk_save_objects(user_models)
-                session.commit()
-
-            # open the CSV file for reading and writing
-            with open(users_filename, mode='r') as csv_file:
-                reader = csv.DictReader(csv_file)
-                fieldnames = reader.fieldnames
-
-                # filter out the current_users and get the remaining users
-                remaining_users = [row for row in reader if row['username'] not in [
-                    u.username for u in current_users]]
-
-            # open the CSV file for writing and write the remaining users
-            with open(users_filename, mode='w', newline='') as csv_file:
-                writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
-                writer.writeheader()
-                writer.writerows(remaining_users)
-
-            start_index = end_index
-            end_index += batch_size
-
-    else:
+    # if the users.csv file doesn't exist, get all users from warpcast,
+    # save the unindexed users in csv, then work through it
+    if not os.path.exists(users_filename):
         all_users = get_all_users_from_warpcast(warpcast_hub_key)
         warpcast_data = [extract_warpcast_user_data(u) for u in all_users]
         users = [UserClass(**data) for data in warpcast_data]
 
-        warpcast_locations = [get_warpcast_location(u) for u in all_users]
+        warpcast_locations = [get_warpcast_location(
+            u) for u in all_users if get_warpcast_location(u) is not None]
+        # filter duplicates
+        warpcast_locations = list(
+            {v.place_id: v for v in warpcast_locations}.values())
 
-        engine = create_engine(os.getenv('PLANETSCALE_URL'), echo=True)
         with sessionmaker(bind=engine)() as session:
             all_fids_in_db = [u.fid for u in session.query(User).all()]
             users = [u for u in users if u.fid not in all_fids_in_db]
@@ -128,6 +85,57 @@ if args.farcaster:
             writer.writerow(UserClass.__annotations__.keys())
             for user in users:
                 writer.writerow(asdict(user).values())
+
+    with open(users_filename, mode='r') as csv_file:
+        reader = csv.reader(csv_file)
+        next(reader)
+        users = [UserClass(*u) for u in list(reader)]
+
+    # Fix types of UserClass attributes
+    users = [fix_user_types(u) for u in users]
+
+    batch_size = 10
+    start_index = 0
+    end_index = batch_size
+    while start_index < len(users):
+        current_users = users[start_index:end_index]
+        if len(current_users) == 0:
+            # delete the csv file
+            os.remove(users_filename)
+            break
+
+        usernames = [u.username for u in current_users]
+        searchcaster_users = asyncio.run(
+            get_users_from_searchcaster(usernames))
+        searchcaster_data = [extract_searchcaster_user_data(
+            u) for u in searchcaster_users]
+
+        current_users = [set_searchcaster_data(
+            u, searchcaster_data) for u in current_users]
+        with sessionmaker(bind=engine)() as session:
+            user_models = list(
+                map(lambda u: User(**asdict(u)), current_users))
+            session.bulk_save_objects(user_models)
+            session.commit()
+
+        # open the CSV file for reading and writing
+        with open(users_filename, mode='r') as csv_file:
+            reader = csv.DictReader(csv_file)
+            fieldnames = reader.fieldnames
+
+            # filter out the current_users and get the remaining users
+            remaining_users = [row for row in reader if row['username'] not in [
+                u.username for u in current_users]]
+
+        # open the CSV file for writing and write the remaining users
+        with open(users_filename, mode='w', newline='') as csv_file:
+            writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(remaining_users)
+
+        start_index = end_index
+        end_index += batch_size
+
 
 if args.ens:
     engine = create_engine(os.getenv('PLANETSCALE_URL'))
@@ -204,11 +212,7 @@ if args.query:
     - email (VARCHAR(255))
     - discord (VARCHAR(63))
 
-    Here's the database schema you're working with. Your job is to turn user queries (in natural language) to SQL. Only return the SQL and nothing else. Don't explain, don't say "here's your query." Just give the SQL. 
-
-    Some explanations: "users" table contain data about Farcaster users; "external_addresses" table contain addresses that are connected to Farcaster (and other additional information); each external address can own multiple Farcaster accounts; "locations" table contain data about places where Farcaster users are located.
-
-    Say "Yes" if you understand.
+    Here's the database schema you're working with. Your job is to turn user queries (in natural language) to SQL. The database is MySQL, adjust your query accordingly. Only return the SQL and nothing else. Don't explain, don't say "here's your query." Just give the SQL. Say "Yes" if you understand.
     """
 
     print("Sending query to ChatGPT...")
@@ -233,6 +237,9 @@ if args.query:
     engine = create_engine(os.getenv('PLANETSCALE_URL'))
     with sessionmaker(bind=engine)() as session:
         result = session.execute(text(reply))
-        rows = result.fetchall()
-        for row in rows:
-            print(row)
+
+        # if result returns row
+        if result.returns_rows:
+            rows = result.fetchall()
+            for row in rows:
+                print(row)

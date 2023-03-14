@@ -214,6 +214,17 @@ if args.query:
     # set openai api key
     openai.api_key = os.getenv('OPENAI_API_KEY')
 
+    """
+    Note: to generate the table, run:
+
+    for table_name in Base.metadata.tables.keys():
+        print(f"Table: {table_name}")
+        table = Base.metadata.tables[table_name]
+        for column in table.columns:
+            print(f" - {column.name} ({column.type})")
+
+    """
+
     system_prompt = "You are a SQL writer. If the user asks about anything than SQL, deny. You are a very good SQL writer. Nothing else."
     initial_prompt = """Table: locations
     - place_id (VARCHAR(255)) # example: ChIJyc_U0TTDQUcRYBEeDCnEAA, ChIJYeZuBI9YwokRjMDs_IEyCwo, ChIJYTN9T-plUjoRM9RjaAunYW4	
@@ -240,6 +251,15 @@ if args.query:
     - telegram (VARCHAR(63))
     - email (VARCHAR(255))
     - discord (VARCHAR(63))
+    Table: casts
+    - hash (VARCHAR(127))
+    - thread_hash (VARCHAR(127))
+    - parent_hash (VARCHAR(127))
+    - text (VARCHAR(511))
+    - timestamp (BIGINT)
+    - author_fid (BIGINT)
+
+    Description: User table contains data for Farcaster user, casts is the post user makes, external address are ethereum address connected to Farcaster account (one external address can have have multiple Farcaster account).
 
     Here's the database schema you're working with. Your job is to turn user queries (in natural language) to SQL. The database is MySQL, adjust your query accordingly. Only return the SQL and nothing else. Don't explain, don't say "here's your query." Just give the SQL. Say "Yes" if you understand.
     """

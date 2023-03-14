@@ -203,10 +203,20 @@ if args.cast:
     # get cast with the latest timestmap
     engine = create_engine(os.getenv('PLANETSCALE_URL'))
     with sessionmaker(bind=engine)() as session:
-        # db_latest_cast = session.query(Cast).order_by(Cast.timestamp.desc()).first()
+        db_latest_cast = session.query(Cast).order_by(
+            Cast.timestamp.desc()).first()
 
-        casts = get_all_casts_from_warpcast(warpcast_hub_key, 1678678168000)
-        print(len(casts))
+        casts = get_all_casts_from_warpcast(
+            warpcast_hub_key, db_latest_cast.timestamp)
+
+        print(f'Found {len(casts)} casts to index')
+
+        existing_cast_hashes = {
+            c.hash for c in session.query(Cast.hash).all()}
+
+        casts = [Cast(**asdict(cast))
+                 for cast in casts if cast.hash not in existing_cast_hashes]
+        session.bulk_save_objects(casts)
 
 
 if args.query:

@@ -2,7 +2,7 @@ import pandas as pd
 from dotenv import load_dotenv
 from sqlalchemy.orm import sessionmaker, Session
 from models import Base, User, Location, ExternalAddress, Cast
-from sqlalchemy import create_engine, and_, Engine, inspect, func, text
+from sqlalchemy import create_engine, and_, Engine, inspect, func, text, select
 import os
 from dotenv import load_dotenv
 load_dotenv()
@@ -50,54 +50,53 @@ def migrate_objects(engine, mysql_engine, model_old, model):
         session.commit()
 
 
-# with sessionmaker(bind=mysql_engine)() as session:
-#     users = session.query(User).filter(
-#         and_(User.external_address != None, User.external_address != '')
-#     ).distinct(User.external_address).all()
-
-#     all_address_in_db = [
-#         a.address for a in session.query(ExternalAddress).all()]
-
-#     # filter out users where the address is already in the db
-#     users = list(
-#         filter(lambda x: x.external_address not in all_address_in_db, users))
-
-#     external_addresses = list(map(lambda x: ExternalAddress(
-#         address=x.external_address,
-#         ens=x.ens,
-#         url=x.url,
-#         github=x.github,
-#         twitter=x.twitter,
-#         telegram=x.telegram,
-#         email=x.email,
-#         discord=x.discord
-#     ), users))
-
-#     session.bulk_save_objects(external_addresses)
-#     session.commit()
-
-
 def migrate_casts():
     engine = create_engine('sqlite:///data-with-casts.db')
+    mysql_engine = create_engine(os.getenv("PLANETSCALE_URL"))
+
+    with sessionmaker(bind=mysql_engine)() as mysql_session:
+        existing_cast_hashes = {
+            c.hash for c in mysql_session.query(Cast.hash).all()}
 
     with sessionmaker(bind=engine)() as session:
-        result = session.execute(text("SELECT * FROM casts;"))
+        batch_size = 5000
+        offset = 0
 
-        # dump to df
-        df = pd.DataFrame(result.fetchall())
-        df = df.drop(
-            columns=['replies_count', 'reactions_count', 'recasts_count', 'watches_count'])
-        
-        casts = []
-        for index, row in df.iterrows():
-            casts.append(Cast(**row.to_dict()))
+        while True:
+            result = session.execute(text("SELECT * FROM casts LIMIT :batch_size OFFSET :offset;"),
+                                     {"batch_size": batch_size, "offset": offset})
 
-        mysql_engine = create_engine(os.getenv("PLANETSCALE_URL"), echo=True)
-        with sessionmaker(bind=mysql_engine)() as mysql_session:
-            all_cast_in_db = [c.hash for c in mysql_session.query(Cast).all()]
-            # filter out casts where the hash is already in the db
-            casts = list(
-                filter(lambda x: x.hash not in all_cast_in_db, casts))
-            mysql_session.bulk_save_objects(casts)
+            print(f"Currently at offset {offset}...")
+
+            rows = result.fetchall()
+            if not rows:
+                break
+
+            # dump to df
+            df = pd.DataFrame(rows)
+            df = df.drop(
+                columns=['replies_count', 'reactions_count', 'recasts_count', 'watches_count'])
+
+            casts = [Cast(**row.to_dict()) for index, row in df.iterrows()]
+
+            with sessionmaker(bind=mysql_engine)() as mysql_session:
+                # existing_cast_hashes = {
+                #     c.hash for c in mysql_session.query(Cast.hash).all()}
+
+                # filter out existing casts
+                new_casts = [
+                    c for c in casts if c.hash not in existing_cast_hashes]
+
+                mysql_session.bulk_insert_mappings(
+                    Cast, [c.__dict__ for c in new_casts]
+                )
+                # mysql_session.bulk_save_objects(new_casts)
+                # # mysql_session.commit()
+
+                existing_cast_hashes = existing_cast_hashes.union(
+                    {c.hash for c in new_casts})
+
+            offset += batch_size
+
 
 migrate_casts()

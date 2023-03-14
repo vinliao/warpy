@@ -1,11 +1,8 @@
-# temporary file in moving data from sqlite to mysql
-
-
+import pandas as pd
 from dotenv import load_dotenv
 from sqlalchemy.orm import sessionmaker, Session
-from modelsold import Base as BaseOld, User as UserOld, Location as LocationOld
-from models import Base, User, Location, ExternalAddress
-from sqlalchemy import create_engine, and_, Engine, inspect, func
+from models import Base, User, Location, ExternalAddress, Cast
+from sqlalchemy import create_engine, and_, Engine, inspect, func, text
 import os
 from dotenv import load_dotenv
 load_dotenv()
@@ -53,28 +50,54 @@ def migrate_objects(engine, mysql_engine, model_old, model):
         session.commit()
 
 
-with sessionmaker(bind=mysql_engine)() as session:
-    users = session.query(User).filter(
-        and_(User.external_address != None, User.external_address != '')
-    ).distinct(User.external_address).all()
+# with sessionmaker(bind=mysql_engine)() as session:
+#     users = session.query(User).filter(
+#         and_(User.external_address != None, User.external_address != '')
+#     ).distinct(User.external_address).all()
 
-    all_address_in_db = [
-        a.address for a in session.query(ExternalAddress).all()]
+#     all_address_in_db = [
+#         a.address for a in session.query(ExternalAddress).all()]
 
-    # filter out users where the address is already in the db
-    users = list(
-        filter(lambda x: x.external_address not in all_address_in_db, users))
+#     # filter out users where the address is already in the db
+#     users = list(
+#         filter(lambda x: x.external_address not in all_address_in_db, users))
 
-    external_addresses = list(map(lambda x: ExternalAddress(
-        address=x.external_address,
-        ens=x.ens,
-        url=x.url,
-        github=x.github,
-        twitter=x.twitter,
-        telegram=x.telegram,
-        email=x.email,
-        discord=x.discord
-    ), users))
+#     external_addresses = list(map(lambda x: ExternalAddress(
+#         address=x.external_address,
+#         ens=x.ens,
+#         url=x.url,
+#         github=x.github,
+#         twitter=x.twitter,
+#         telegram=x.telegram,
+#         email=x.email,
+#         discord=x.discord
+#     ), users))
 
-    session.bulk_save_objects(external_addresses)
-    session.commit()
+#     session.bulk_save_objects(external_addresses)
+#     session.commit()
+
+
+def migrate_casts():
+    engine = create_engine('sqlite:///data-with-casts.db')
+
+    with sessionmaker(bind=engine)() as session:
+        result = session.execute(text("SELECT * FROM casts;"))
+
+        # dump to df
+        df = pd.DataFrame(result.fetchall())
+        df = df.drop(
+            columns=['replies_count', 'reactions_count', 'recasts_count', 'watches_count'])
+        
+        casts = []
+        for index, row in df.iterrows():
+            casts.append(Cast(**row.to_dict()))
+
+        mysql_engine = create_engine(os.getenv("PLANETSCALE_URL"), echo=True)
+        with sessionmaker(bind=mysql_engine)() as mysql_session:
+            all_cast_in_db = [c.hash for c in mysql_session.query(Cast).all()]
+            # filter out casts where the hash is already in the db
+            casts = list(
+                filter(lambda x: x.hash not in all_cast_in_db, casts))
+            mysql_session.bulk_save_objects(casts)
+
+migrate_casts()

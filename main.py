@@ -2,7 +2,7 @@ from users import *
 import argparse
 import os
 from sqlalchemy.orm import sessionmaker
-from models import Base, User, Location
+from models import Base, User, Location, Cast
 from sqlalchemy import create_engine, text, func
 import asyncio
 import argparse
@@ -199,7 +199,14 @@ if args.ens:
             end_index += batch_size
 
 if args.cast:
-    pass
+    # get cast with the latest timestmap
+    engine = create_engine(os.getenv('PLANETSCALE_URL'))
+    with sessionmaker(bind=engine)() as session:
+        cast = session.query(Cast).order_by(Cast.timestamp.desc()).first()
+
+        # get all casts from warpcast (while), when timestamp is lower than the latest cast, break
+        while True:
+            pass
 
 if args.query:
     import openai

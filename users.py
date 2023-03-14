@@ -1,18 +1,12 @@
 from dotenv import load_dotenv
 import os
 import requests
-from sqlalchemy.orm import sessionmaker, Session
-from models import Base, User, Location
-from sqlalchemy import create_engine, and_, Engine
+from models import Location
 import time
 import asyncio
 import aiohttp
-import argparse
-import sys
-from dataclasses import dataclass, asdict
-from utils import not_none
-from typing import Union, Optional
-import csv
+from dataclasses import dataclass
+from typing import Optional
 
 load_dotenv()
 warpcast_hub_key = os.getenv("WARPCAST_HUB_KEY")

@@ -30,10 +30,10 @@ class Cast(Base):
     author_fid = Column(BigInteger, nullable=False)
     author = relationship(
         'User', primaryjoin='Cast.author_fid == foreign(User.fid)', remote_side='User.fid')
-    parent = relationship('Cast', primaryjoin='Cast.parent_hash == foreign(Cast.hash)', remote_side=[
-                          hash], backref='children')
-    thread = relationship('Cast', primaryjoin='Cast.thread_hash == foreign(Cast.hash)', remote_side=[
-                          hash], backref='descendant')
+    # parent = relationship('Cast', primaryjoin='Cast.parent_hash == foreign(Cast.hash)', remote_side=[
+    #                       hash], backref='children')
+    # thread = relationship('Cast', primaryjoin='Cast.thread_hash == foreign(Cast.hash)', remote_side=[
+    #                       hash], backref='descendant')
 
 
 class User(Base):

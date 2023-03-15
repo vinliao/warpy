@@ -21,8 +21,8 @@ parser.add_argument('-a', '--all', action='store_true',
                     help='Refresh user data from Warpcast, Searchcaster, and ENSData')
 parser.add_argument('--user', action='store_true',
                     help='Refresh user data from Warpcast and Searchcaster')
-parser.add_argument('--user2', action='store_true',
-                    help='Refresh user data from Warpcast and Searchcaster')
+parser.add_argument('--eth', action='store_true',
+                    help='Refresh Ethereum transactions data from Alchemy')
 parser.add_argument('--ens', action='store_true',
                     help='Refresh user data from Ensdata')
 parser.add_argument('--cast', action='store_true',
@@ -219,6 +219,9 @@ if args.cast:
         casts = [Cast(**asdict(cast))
                  for cast in casts if cast.hash not in existing_cast_hashes]
         session.bulk_save_objects(casts)
+    
+if args.eth:
+    engine = create_engine(os.getenv('PLANETSCALE_URL'), echo=True)
 
 
 if args.query:
@@ -271,6 +274,20 @@ if args.query:
     - text (VARCHAR(511))
     - timestamp (BIGINT)
     - author_fid (BIGINT)
+    Table: eth_transactions
+    - hash (VARCHAR(127)) # ethereum transaction hash
+    - address_fid (BIGINT)
+    - address_external (VARCHAR(63)) # ethereum address, example: 0xaff2ab518ba962bd19f67e75ceb9de4da350b327, 0xdcb3beb907745e7ec9e3632508baf927b5950f67, 0x19793902549ac230d25fe5b5688cb30e0535fbed,
+    - timestamp (BIGINT)
+    - block_num (BIGINT)
+    - from_address (VARCHAR(63)) # ethereum address, example: 0xaff2ab518ba962bd19f67e75ceb9de4da350b327, 0xdcb3beb907745e7ec9e3632508baf927b5950f67, 0x19793902549ac230d25fe5b5688cb30e0535fbed,
+    - to_address (VARCHAR(63)) # ethereum address, example: 0xaff2ab518ba962bd19f67e75ceb9de4da350b327, 0xdcb3beb907745e7ec9e3632508baf927b5950f67, 0x19793902549ac230d25fe5b5688cb30e0535fbed,
+    - value (FLOAT)
+    - erc721_token_id (VARCHAR(127))
+    - erc1155_metadata (VARCHAR(255))
+    - token_id (VARCHAR(255))
+    - asset (VARCHAR(255))
+    - category (VARCHAR(255)) # ENUM('erc20', 'erc721', 'erc1155', 'external')
 
     Description: User table contains data for Farcaster user, casts is the post user makes, external address are ethereum address connected to Farcaster account (one external address can have have multiple Farcaster account).
 

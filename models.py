@@ -1,4 +1,4 @@
-from sqlalchemy import Column, BigInteger, String, Boolean, Float
+from sqlalchemy import Column, BigInteger, String, Boolean, Float, Integer
 from sqlalchemy.orm import relationship, declarative_base
 
 Base = declarative_base()
@@ -89,12 +89,26 @@ class EthTransaction(Base):
     to_address = Column(String(63))
     value = Column(Float, nullable=True)
     erc721_token_id = Column(String(127), nullable=True)
-    erc1155_metadata = Column(String(255), nullable=True)
     token_id = Column(String(255), nullable=True)
     asset = Column(String(255), nullable=True)
     category = Column(String(255))
-    user = relationship(
-        'User', primaryjoin='User.fid == EthTransaction.address_fid', backref='eth_transactions')
 
+    user = relationship(
+        'User', primaryjoin='User.fid == foreign(EthTransaction.address_fid)', backref='eth_transactions')
     address_obj = relationship(
-        'ExternalAddress', primaryjoin='ExternalAddress.address == EthTransaction.address_external', backref='eth_transactions')
+        'ExternalAddress', primaryjoin='ExternalAddress.address == foreign(EthTransaction.address_external)', backref='eth_transactions')
+    erc1155_metadata = relationship(
+        'ERC1155Metadata', primaryjoin='ERC1155Metadata.eth_transaction_hash == foreign(EthTransaction.hash)', back_populates='eth_transaction')
+
+
+class ERC1155Metadata(Base):
+    __tablename__ = 'erc1155_metadata'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    eth_transaction_hash = Column(
+        String(127), nullable=False)
+    token_id = Column(String(255), nullable=False)
+    value = Column(String(255), nullable=False)
+
+    eth_transaction = relationship(
+        'EthTransaction', primaryjoin='ERC1155Metadata.eth_transaction_hash == foreign(EthTransaction.hash)', back_populates='erc1155_metadata')

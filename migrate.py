@@ -1,7 +1,7 @@
 import pandas as pd
 from dotenv import load_dotenv
 from sqlalchemy.orm import sessionmaker, Session
-from models import Base, User, Location, ExternalAddress, Cast
+from models import Base, User, Location, ExternalAddress, Cast, EthTransaction, ERC1155Metadata, OldEthTransaction
 from sqlalchemy import create_engine, and_, Engine, inspect, func, text, select
 import os
 from dotenv import load_dotenv
@@ -28,7 +28,7 @@ def inspect_db(engine):
 
 def get_all(engine, model):
     with sessionmaker(bind=engine)() as session:
-        return session.query(model).all()
+        return session.query(model).limit(100).all()
 
 
 def make_sqlalchemy_object(obj_dict, model):
@@ -36,20 +36,68 @@ def make_sqlalchemy_object(obj_dict, model):
     return model(**obj_dict)
 
 
+# def migrate_objects(engine, mysql_engine, model_old, model):
+#     rows_to_migrate = [make_sqlalchemy_object(
+#         x.__dict__, model) for x in get_all(engine, model_old)]
+
+#     all_rows_in_db = get_all(mysql_engine, model)
+#     all_primary_keys_in_db = [getattr(r, model.__table__.primary_key.columns.keys()[
+#                                       0]) for r in all_rows_in_db]
+#     filtered_rows = [r for r in rows_to_migrate if getattr(
+#         r, model.__table__.primary_key.columns.keys()[0]) not in all_primary_keys_in_db]
+
+#     BATCH_SIZE = 1000
+#     for i in range(0, len(filtered_rows), BATCH_SIZE):
+#         batch = filtered_rows[i:i+BATCH_SIZE]
+#         with sessionmaker(bind=mysql_engine)() as session:
+#             session.bulk_save_objects(batch)
+#             session.commit()
+
+# def migrate_objects(engine, mysql_engine, model_old, model):
+#     rows_to_migrate = [make_sqlalchemy_object(
+#         x.__dict__, model) for x in get_all(engine, model_old)]
+
+#     BATCH_SIZE = 1000
+#     for i in range(0, len(rows_to_migrate), BATCH_SIZE):
+#         batch = rows_to_migrate[i:i+BATCH_SIZE]
+#         with sessionmaker(bind=mysql_engine)() as session:
+#             for obj in batch:
+#                 erc1155_metadata = obj.pop('erc1155_metadata', None)
+#                 session.add(model(**obj))
+#                 if erc1155_metadata:
+#                     for token in erc1155_metadata:
+#                         session.add(ERC1155Metadata(
+#                             eth_transaction_hash=obj['hash'],
+#                             token_id=token['tokenId'],
+#                             value=token['value']
+#                         ))
+#             session.commit()
 def migrate_objects(engine, mysql_engine, model_old, model):
-    things = list(map(lambda x: make_sqlalchemy_object(
-        x.__dict__, model), get_all(engine, model_old)))
+    rows_to_migrate = [make_sqlalchemy_object(
+        x.__dict__, model) for x in get_all(engine, model_old)]
 
-    all_things_mysql = get_all(mysql_engine, model)
-    all_things_mysql_ids = list(map(lambda x: x.fid, all_things_mysql))
+    BATCH_SIZE = 1000
+    for i in range(0, len(rows_to_migrate), BATCH_SIZE):
+        batch = rows_to_migrate[i:i+BATCH_SIZE]
 
-    things = list(filter(lambda x: x.fid not in all_things_mysql_ids, things))
+        with sessionmaker(bind=mysql_engine)() as session:
+            for obj in batch:
+                print(obj.__dict__)
+                metadata = obj.erc1155_metadata
+                obj.erc1155_metadata = None
+                session.add(obj)
+            session.commit()
 
-    with sessionmaker(bind=mysql_engine)() as session:
-        session.bulk_save_objects(things)
-        session.commit()
+
+# # Get all the existing EthTransactions from the source database
+# with sessionmaker(bind=engine)() as src_session:
+#     eth_transactions = get_all(src_session.bind, OldEthTransaction)
+
+# Migrate the EthTransactions to the destination database
+migrate_objects(engine, mysql_engine, OldEthTransaction, EthTransaction)
 
 
+# TODO: inefficient code
 def migrate_casts():
     engine = create_engine('sqlite:///data-with-casts.db')
     mysql_engine = create_engine(os.getenv("PLANETSCALE_URL"))
@@ -68,16 +116,19 @@ def migrate_casts():
 
             print(f"Currently at offset {offset}...")
 
-            rows = result.fetchall()
-            if not rows:
-                break
+            casts = []
+            for row in result:
+                cast_dict = {
+                    'hash': row['hash'],
+                    'thread_hash': row['thread_hash'],
+                    'parent_hash': row['parent_hash'],
+                    'text': row['text'],
+                    'timestamp': row['timestamp'],
+                    'author_fid': row['author_fid']
+                }
 
-            # dump to df
-            df = pd.DataFrame(rows)
-            df = df.drop(
-                columns=['replies_count', 'reactions_count', 'recasts_count', 'watches_count'])
-
-            casts = [Cast(**row.to_dict()) for index, row in df.iterrows()]
+                cast = Cast(**cast_dict)
+                casts.append(cast)
 
             with sessionmaker(bind=mysql_engine)() as mysql_session:
                 # existing_cast_hashes = {
@@ -97,6 +148,3 @@ def migrate_casts():
                     {c.hash for c in new_casts})
 
             offset += batch_size
-
-
-migrate_casts()

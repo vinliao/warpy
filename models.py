@@ -1,4 +1,4 @@
-from sqlalchemy import Column, BigInteger, String, Boolean
+from sqlalchemy import Column, BigInteger, String, Boolean, Float
 from sqlalchemy.orm import relationship, declarative_base
 
 Base = declarative_base()
@@ -76,22 +76,25 @@ class ExternalAddress(Base):
     user = relationship(
         'User', primaryjoin='foreign(User.external_address) == ExternalAddress.address', backref='external_addresses')
 
-# class EthTransaction(Base):
-#     __tablename__ = 'eth_transactions'
 
-#     hash = Column(String(127), primary_key=True)
-#     address_fid = Column(BigInteger, ForeignKey('users.fid'), nullable=False)
-#     address_external = Column(String(63), ForeignKey(
-#         'users.external_address'), nullable=False)
-#     address = relationship('User', backref='eth_transactions',
-#                            foreign_keys=[address_external])
-#     timestamp = Column(BigInteger)
-#     block_num = Column(BigInteger)
-#     from_address = Column(String(63))
-#     to_address = Column(String(63))
-#     value = Column(Float, nullable=True)
-#     erc721_token_id = Column(String(127), nullable=True)
-#     erc1155_metadata = Column(String(255), nullable=True)
-#     token_id = Column(String(255), nullable=True)
-#     asset = Column(String(255), nullable=True)
-#     category = Column(String(255))
+class EthTransaction(Base):
+    __tablename__ = 'eth_transactions'
+
+    hash = Column(String(127), primary_key=True)
+    address_fid = Column(BigInteger, nullable=False)
+    address_external = Column(String(63), nullable=False)
+    timestamp = Column(BigInteger)
+    block_num = Column(BigInteger)
+    from_address = Column(String(63))
+    to_address = Column(String(63))
+    value = Column(Float, nullable=True)
+    erc721_token_id = Column(String(127), nullable=True)
+    erc1155_metadata = Column(String(255), nullable=True)
+    token_id = Column(String(255), nullable=True)
+    asset = Column(String(255), nullable=True)
+    category = Column(String(255))
+    user = relationship(
+        'User', primaryjoin='User.fid == EthTransaction.address_fid', backref='eth_transactions')
+
+    address_obj = relationship(
+        'ExternalAddress', primaryjoin='ExternalAddress.address == EthTransaction.address_external', backref='eth_transactions')

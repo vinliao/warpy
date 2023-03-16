@@ -219,7 +219,7 @@ if args.cast:
         casts = [Cast(**asdict(cast))
                  for cast in casts if cast.hash not in existing_cast_hashes]
         session.bulk_save_objects(casts)
-    
+
 if args.eth:
     engine = create_engine(os.getenv('PLANETSCALE_URL'), echo=True)
 
@@ -242,54 +242,90 @@ if args.query:
     """
 
     system_prompt = "You are a SQL writer. If the user asks about anything than SQL, deny. You are a very good SQL writer. Nothing else."
-    initial_prompt = """Table: locations
-    - place_id (VARCHAR(255)) # example: ChIJyc_U0TTDQUcRYBEeDCnEAA, ChIJYeZuBI9YwokRjMDs_IEyCwo, ChIJYTN9T-plUjoRM9RjaAunYW4	
-    - description (VARCHAR(255)) # example: Budapest, Hungary; Manhattan, New York, NY, USA; Chennai, Tamil Nadu, India; Red Hook, NY, USA
-    Table: users
-    - fid (BIGINT)
-    - username (VARCHAR(50))
-    - display_name (VARCHAR(255))
-    - verified (BOOLEAN)
-    - pfp_url (VARCHAR(255))
-    - follower_count (BIGINT)
-    - following_count (BIGINT)
-    - bio_text (VARCHAR(255))
-    - location_place_id (VARCHAR(255)) # example: ChIJyc_U0TTDQUcRYBEeDCnEAA, ChIJYeZuBI9YwokRjMDs_IEyCwo, ChIJYTN9T-plUjoRM9RjaAunYW4	
-    - farcaster_address (VARCHAR(63)) # ethereum address, example: 0xaff2ab518ba962bd19f67e75ceb9de4da350b327, 0xdcb3beb907745e7ec9e3632508baf927b5950f67, 0x19793902549ac230d25fe5b5688cb30e0535fbed,
-    - external_address (VARCHAR(63)) # ethereum address, example: 0xaff2ab518ba962bd19f67e75ceb9de4da350b327, 0xdcb3beb907745e7ec9e3632508baf927b5950f67, 0x19793902549ac230d25fe5b5688cb30e0535fbed,
-    - registered_at (BIGINT)
-    Table: external_addresses
-    - address (VARCHAR(63)) # ethereum address, example: 0xaff2ab518ba962bd19f67e75ceb9de4da350b327, 0xdcb3beb907745e7ec9e3632508baf927b5950f67, 0x19793902549ac230d25fe5b5688cb30e0535fbed,
-    - ens (VARCHAR(255)) # string that ends with .eth, example: whatever.eth, something.eth, else.eth
-    - url (VARCHAR(255))
-    - github (VARCHAR(255))
-    - twitter (VARCHAR(63))
-    - telegram (VARCHAR(63))
-    - email (VARCHAR(255))
-    - discord (VARCHAR(63))
-    Table: casts
-    - hash (VARCHAR(127))
-    - thread_hash (VARCHAR(127))
-    - parent_hash (VARCHAR(127))
-    - text (VARCHAR(511))
-    - timestamp (BIGINT)
-    - author_fid (BIGINT)
-    Table: eth_transactions
-    - hash (VARCHAR(127)) # ethereum transaction hash
-    - address_fid (BIGINT)
-    - address_external (VARCHAR(63)) # ethereum address, example: 0xaff2ab518ba962bd19f67e75ceb9de4da350b327, 0xdcb3beb907745e7ec9e3632508baf927b5950f67, 0x19793902549ac230d25fe5b5688cb30e0535fbed,
-    - timestamp (BIGINT)
-    - block_num (BIGINT)
-    - from_address (VARCHAR(63)) # ethereum address, example: 0xaff2ab518ba962bd19f67e75ceb9de4da350b327, 0xdcb3beb907745e7ec9e3632508baf927b5950f67, 0x19793902549ac230d25fe5b5688cb30e0535fbed,
-    - to_address (VARCHAR(63)) # ethereum address, example: 0xaff2ab518ba962bd19f67e75ceb9de4da350b327, 0xdcb3beb907745e7ec9e3632508baf927b5950f67, 0x19793902549ac230d25fe5b5688cb30e0535fbed,
-    - value (FLOAT)
-    - erc721_token_id (VARCHAR(127))
-    - erc1155_metadata (VARCHAR(255))
-    - token_id (VARCHAR(255))
-    - asset (VARCHAR(255))
-    - category (VARCHAR(255)) # ENUM('erc20', 'erc721', 'erc1155', 'external')
+    initial_prompt = """class Cast(Base):
+    __tablename__ = 'casts'
+    hash = Column(String(127), primary_key=True)
+    thread_hash = Column(String(127), nullable=False)
+    parent_hash = Column(String(127), nullable=True)
+    text = Column(String(511), nullable=False)
+    timestamp = Column(BigInteger, nullable=False)
+    author_fid = Column(BigInteger, nullable=False)
+    author = relationship(
+        'User', primaryjoin='Cast.author_fid == foreign(User.fid)', remote_side='User.fid')
 
-    Description: User table contains data for Farcaster user, casts is the post user makes, external address are ethereum address connected to Farcaster account (one external address can have have multiple Farcaster account).
+class User(Base):
+    __tablename__ = 'users'
+    fid = Column(BigInteger, primary_key=True)
+    username = Column(String(50))
+    display_name = Column(String(255))
+    verified = Column(Boolean, default=False)
+    pfp_url = Column(String(255), nullable=True)
+    follower_count = Column(BigInteger)
+    following_count = Column(BigInteger)
+    bio_text = Column(String(255), nullable=True)
+    location_place_id = Column(String(255), nullable=True)
+    farcaster_address = Column(String(63), nullable=True)
+    external_address = Column(String(63), nullable=True)
+    registered_at = Column(BigInteger, nullable=True)
+    casts = relationship(
+        'Cast', primaryjoin='User.fid == foreign(Cast.author_fid)', backref='user')
+
+class Location(Base):
+    __tablename__ = 'locations'
+    place_id = Column(String(255), primary_key=True)
+    description = Column(String(255))
+    users = relationship(
+        'User', primaryjoin='foreign(User.location_place_id) == Location.place_id', backref='location')
+
+class ExternalAddress(Base):
+    __tablename__ = 'external_addresses'
+    address = Column(String(63), primary_key=True)
+    ens = Column(String(255), nullable=True)
+    url = Column(String(255), nullable=True)
+    github = Column(String(255), nullable=True)
+    twitter = Column(String(63), nullable=True)
+    telegram = Column(String(63), nullable=True)
+    email = Column(String(255), nullable=True)
+    discord = Column(String(63), nullable=True)
+
+    user = relationship(
+        'User', primaryjoin='foreign(User.external_address) == ExternalAddress.address', backref='external_addresses')
+
+class EthTransaction(Base):
+    __tablename__ = 'eth_transactions'
+
+    hash = Column(String(127), primary_key=True)
+    address_fid = Column(BigInteger, nullable=False)
+    address_external = Column(String(63), nullable=False)
+    timestamp = Column(BigInteger)
+    block_num = Column(BigInteger)
+    from_address = Column(String(63))
+    to_address = Column(String(63))
+    value = Column(Float, nullable=True)
+    erc721_token_id = Column(String(127), nullable=True)
+    token_id = Column(String(255), nullable=True)
+    asset = Column(String(255), nullable=True)
+    category = Column(String(255))
+
+    user = relationship(
+        'User', primaryjoin='User.fid == foreign(EthTransaction.address_fid)', backref='eth_transactions')
+    address_obj = relationship(
+        'ExternalAddress', primaryjoin='ExternalAddress.address == foreign(EthTransaction.address_external)', backref='eth_transactions')
+    erc1155_metadata = relationship(
+        'ERC1155Metadata', primaryjoin='ERC1155Metadata.eth_transaction_hash == foreign(EthTransaction.hash)', back_populates='eth_transaction')
+
+class ERC1155Metadata(Base):
+    __tablename__ = 'erc1155_metadata'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    eth_transaction_hash = Column(
+        String(127), nullable=False)
+    token_id = Column(String(255), nullable=False)
+    value = Column(String(255), nullable=False)
+
+    eth_transaction = relationship(
+        'EthTransaction', primaryjoin='ERC1155Metadata.eth_transaction_hash == foreign(EthTransaction.hash)', back_populates='erc1155_metadata')
+
 
     Here's the database schema you're working with. Your job is to turn user queries (in natural language) to SQL. The database is MySQL, adjust your query accordingly. Only return the SQL and nothing else. Don't explain, don't say "here's your query." Just give the SQL. Say "Yes" if you understand.
     """

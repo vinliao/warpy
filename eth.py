@@ -3,8 +3,8 @@ import os
 from dotenv import load_dotenv
 import requests
 from sqlalchemy.orm import sessionmaker
-from models import Base, User, EthTransaction, ERC1155Metadata
-from sqlalchemy import create_engine
+from models import Base, User, EthTransaction
+from sqlalchemy import create_engine, text
 from datetime import datetime
 import random
 
@@ -58,8 +58,6 @@ def get_all_transactions(address):
             break
     return transactions
 
-# print(get_all_transactions('0xd7029bdea1c17493893aafe29aad69ef892b8ff2'))
-
 
 def make_transaction_models(transfer, address_fid, address_external):
     eth_transaction_dict = {
@@ -92,67 +90,25 @@ def make_transaction_models(transfer, address_fid, address_external):
     return eth_transaction_dict, erc1155_metadata_dicts
 
 
-# def insert_transactions_to_db(session, transactions):
-#     txs = []
-#     metadata_objs = []
-
-#     for transaction in transactions:
-#         user_from = session.query(User).filter(
-#             User.external_address == transaction['from']).first()
-#         user_to = session.query(User).filter(
-#             User.external_address == transaction['to']).first()
-
-#         if user_from or user_to:
-#             if user_from:
-#                 eth_transaction_dict, erc1155_metadata_dicts = make_transaction_models(
-#                     transaction, user_from.fid, user_from.external_address)
-#             elif user_to:
-#                 eth_transaction_dict, erc1155_metadata_dicts = make_transaction_models(
-#                     transaction, user_to.fid, user_to.external_address)
-
-#             eth_transaction = EthTransaction(**eth_transaction_dict)
-
-#             # check if transaction already exists
-#             existing_tx = session.query(EthTransaction).filter_by(
-#                 hash=eth_transaction_dict['hash']).first()
-#             if not existing_tx:
-#                 txs.append(eth_transaction)
-
-#             if erc1155_metadata_dicts:
-#                 for erc1155_metadata_dict in erc1155_metadata_dicts:
-#                     metadata_obj = ERC1155Metadata(**erc1155_metadata_dict)
-#                     metadata_objs.append(metadata_obj)
-
-#     print(f"inserting {len(txs)} txs and {len(metadata_objs)} metadata")
-#     session.bulk_save_objects(txs)
-#     session.bulk_save_objects(metadata_objs)
-#     session.commit()
+def get_users_from_addresses(session, addresses):
+    return session.query(User).filter(User.external_address.in_(addresses)).all()
 
 
-# engine = create_engine(os.getenv('PLANETSCALE_URL'))
-# with sessionmaker(bind=engine)() as session:
-#     # get all users at once
-#     users = session.query(User).all()
-
-#     for user in users:
-#         if user.external_address:
-#             transactions = get_all_transactions(user.external_address)
-#             insert_transactions_to_db(session, transactions)
-#             print(
-#                 f"Done with {user.fid}, {user.username}, {user.external_address}")
-
-def insert_transactions_to_db(session, transactions):
+def insert_transactions_to_db(session, all_transactions):
     txs = []
     metadata_objs = []
 
     existing_hashes = set(
         tx.hash for tx in session.query(EthTransaction).all())
 
-    for transaction in transactions:
-        user_from = session.query(User).filter(
-            User.external_address == transaction['from']).first()
-        user_to = session.query(User).filter(
-            User.external_address == transaction['to']).first()
+    users_from_addresses = get_users_from_addresses(
+        session, [tx['from'] for tx in all_transactions] + [tx['to'] for tx in all_transactions])
+    users_from_addresses_dict = {
+        user.external_address: user for user in users_from_addresses}
+
+    for transaction in all_transactions:
+        user_from = users_from_addresses_dict.get(transaction['from'])
+        user_to = users_from_addresses_dict.get(transaction['to'])
 
         if user_from or user_to:
             if user_from:
@@ -163,45 +119,60 @@ def insert_transactions_to_db(session, transactions):
                     transaction, user_to.fid, user_to.external_address)
 
             if eth_transaction_dict['hash'] not in existing_hashes:
-                eth_transaction = EthTransaction(**eth_transaction_dict)
-                txs.append(eth_transaction)
+                txs.append(eth_transaction_dict)
                 existing_hashes.add(eth_transaction_dict['hash'])
 
             if erc1155_metadata_dicts:
                 for erc1155_metadata_dict in erc1155_metadata_dicts:
-                    metadata_obj = ERC1155Metadata(**erc1155_metadata_dict)
-                    metadata_objs.append(metadata_obj)
+                    metadata_objs.append(erc1155_metadata_dict)
 
     print(f"inserting {len(txs)} txs and {len(metadata_objs)} metadata")
-    session.bulk_save_objects(txs)
-    session.bulk_save_objects(metadata_objs)
+
+    # Bulk insert transactions while ignoring duplicates
+    eth_transaction_insert_query = text("""
+    INSERT IGNORE INTO eth_transactions (hash, address_fid, address_external, timestamp, block_num, from_address, to_address, value, erc721_token_id, token_id, asset, category)
+    VALUES (:hash, :address_fid, :address_external, :timestamp, :block_num, :from_address, :to_address, :value, :erc721_token_id, :token_id, :asset, :category)
+    """)
+    session.execute(eth_transaction_insert_query, txs)
+
+    # Bulk insert metadata while ignoring duplicates
+    erc1155_metadata_insert_query = text("""
+    INSERT IGNORE INTO erc1155_metadata (eth_transaction_hash, token_id, value)
+    VALUES (:eth_transaction_hash, :token_id, :value)
+    """)
+    session.execute(erc1155_metadata_insert_query, metadata_objs)
+
     session.commit()
+
+
+def process_user_batch(session, users_batch):
+    user_addresses = {user.external_address: user.fid for user in users_batch}
+
+    all_transactions = []
+    for address in user_addresses.keys():
+        transactions = get_all_transactions(address)
+        all_transactions.extend(transactions)
+
+    insert_transactions_to_db(session, all_transactions)
+
+
+def batch_users(users, batch_size):
+    for i in range(0, len(users), batch_size):
+        yield users[i:i + batch_size]
+
+
+def process_users_in_batches(session, users, batch_size=10):
+    for users_batch in batch_users(users, batch_size):
+        process_user_batch(session, users_batch)
+        print(f"Processed batch of {len(users_batch)} users")
 
 
 engine = create_engine(os.getenv('PLANETSCALE_URL'))
 with sessionmaker(bind=engine)() as session:
-    # get all users at once
-    users = session.query(User).all()
+    # get all users with external address
+    users = session.query(User).filter(User.external_address != None).all()
     # shuffle users
     users = random.sample(users, len(users))
 
-    for user in users:
-        if user.external_address:
-            transactions = get_all_transactions(user.external_address)
-            insert_transactions_to_db(session, transactions)
-            print(
-                f"Done with {user.fid}, {user.username}, {user.external_address}")
-
-    # user_external_addresses = [
-    #     user.external_address for user in users if user.external_address]
-
-    # # get all transactions at once
-    # all_transactions = []
-    # for external_address in user_external_addresses:
-    #     all_transactions += get_all_transactions(external_address)
-
-    # insert_transactions_to_db(session, all_transactions)
-
-    # for user in users:
-    #     if user.external_address:
-    #         print(f"Done with {user.fid}, {user.username}, {user.external_address}")
+    process_users_in_batches(session, users, batch_size=3)
+    print(f"Done inserting transactions")

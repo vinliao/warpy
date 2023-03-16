@@ -27,7 +27,7 @@ parser.add_argument('--ens', action='store_true',
                     help='Refresh user data from Ensdata')
 parser.add_argument('--cast', action='store_true',
                     help='Refresh cast data from Warpcast')
-parser.add_argument('--query', nargs='+', type=str,
+parser.add_argument('-q', '--query', nargs='+', type=str,
                     help='Run query with the help of ChatGPT (ex: "give me all users with fid below 100")')
 
 args = parser.parse_args()

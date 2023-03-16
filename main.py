@@ -230,17 +230,6 @@ if args.query:
     # set openai api key
     openai.api_key = os.getenv('OPENAI_API_KEY')
 
-    """
-    Note: to generate the table, run:
-
-    for table_name in Base.metadata.tables.keys():
-        print(f"Table: {table_name}")
-        table = Base.metadata.tables[table_name]
-        for column in table.columns:
-            print(f" - {column.name} ({column.type})")
-
-    """
-
     system_prompt = "You are a SQL writer. If the user asks about anything than SQL, deny. You are a very good SQL writer. Nothing else."
     initial_prompt = """class Cast(Base):
     __tablename__ = 'casts'

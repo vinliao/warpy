@@ -3,23 +3,11 @@ import os
 import requests
 from models import Cast
 import time
-import asyncio
-import aiohttp
-from dataclasses import dataclass, asdict
 from typing import Optional
+from sqlalchemy import text
 
 load_dotenv()
 warpcast_hub_key = os.getenv("WARPCAST_HUB_KEY")
-
-
-@dataclass(frozen=True)
-class CastDataClass:
-    hash: str
-    thread_hash: str
-    parent_hash: str
-    text: str
-    timestamp: int
-    author_fid: int
 
 
 # ============================================================
@@ -70,20 +58,22 @@ def get_all_casts_from_warpcast(key: str, timestamp: int):
     return cast_arr
 
 
+def bulk_index_casts(casts, session):
+    cast_insert_query = text("""
+    INSERT IGNORE INTO casts (hash, thread_hash, parent_hash, text, timestamp, author_fid)
+    VALUES (:hash, :thread_hash, :parent_hash, :text, :timestamp, :author_fid)
+    """)
+    session.execute(cast_insert_query, casts)
+    print(f"Indexed {len(casts)} casts")
+    session.commit()
+
+
 def extract_warpcast_cast_data(cast):
-    return CastDataClass(
-        hash=cast['hash'],
-        thread_hash=cast['threadHash'],
-        parent_hash=cast.get('parentHash', ''),
-        text=cast['text'],
-        timestamp=cast['timestamp'],
-        author_fid=cast['author']['fid']
-    )
-
-
-# data = get_casts_from_warpcast(warpcast_hub_key)
-# # turn cast to sqlalchemy model, use **
-# casts = [Cast(**asdict(cast)) for cast in cast_data]
-
-# print(casts)
-# # insert this to db or soemthing
+    return {
+        "hash": cast['hash'],
+        "thread_hash": cast['threadHash'],
+        "parent_hash": cast.get('parentHash', ''),
+        "text": cast['text'],
+        "timestamp": cast['timestamp'],
+        "author_fid": cast['author']['fid']
+    }

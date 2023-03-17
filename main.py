@@ -201,24 +201,24 @@ if args.ens:
             start_index = end_index
             end_index += batch_size
 
+# seed casts from warpcast
 if args.cast:
-    # get cast with the latest timestmap
     engine = create_engine(os.getenv('PLANETSCALE_URL'))
     with sessionmaker(bind=engine)() as session:
-        db_latest_cast = session.query(Cast).order_by(
-            Cast.timestamp.desc()).first()
+        cursor = None
+        while True:
+            data = get_casts_from_warpcast(warpcast_hub_key, cursor)
+            casts = [extract_warpcast_cast_data(
+                cast) for cast in data['casts']]
+            cursor = data.get("cursor")
 
-        casts = get_all_casts_from_warpcast(
-            warpcast_hub_key, db_latest_cast.timestamp)
+            bulk_index_casts(casts, session)
 
-        print(f'Found {len(casts)} casts to index')
-
-        existing_cast_hashes = {
-            c.hash for c in session.query(Cast.hash).all()}
-
-        casts = [Cast(**asdict(cast))
-                 for cast in casts if cast.hash not in existing_cast_hashes]
-        session.bulk_save_objects(casts)
+            if cursor is None:
+                break
+            else:
+                time.sleep(1)
+                continue
 
 if args.eth:
     engine = create_engine(os.getenv('PLANETSCALE_URL'), echo=True)

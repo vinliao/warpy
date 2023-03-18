@@ -319,7 +319,7 @@ class ERC1155Metadata(Base):
     Here's the database schema you're working with. Your job is to turn user queries (in natural language) to SQL. The database is MySQL, adjust your query accordingly. Only return the SQL and nothing else. Don't explain, don't say "here's your query." Just give the SQL. Say "Yes" if you understand.
     """
 
-    print("Sending query to ChatGPT...")
+    print("Sending query to ChatGPT...\n")
 
     completion = openai.ChatCompletion.create(
         model="gpt-3.5-turbo",
@@ -335,14 +335,23 @@ class ERC1155Metadata(Base):
     reply = completion['choices'][0]['message']['content'].strip()
 
     print(f"SQL from ChatGPT: \n\n{reply}\n")
-    print(f"Running SQL...")
+
+    print(f"Running SQL...\n")
 
     # take the raw sql query, then run it against the db
     engine = create_engine(os.getenv('PLANETSCALE_URL'))
     with sessionmaker(bind=engine)() as session:
         result = session.execute(text(reply))
 
-        # if result returns row
+        # if result returns rows
         rows = result.fetchall()
-        for row in rows:
-            print(row)
+        if rows:
+            # print column names
+            print(', '.join(result.keys()))
+
+            # print each row
+            for row in rows:
+                print(row)
+                # print(', '.join(str(column) for column in row))
+        else:
+            print("No output available")

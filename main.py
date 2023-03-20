@@ -212,9 +212,9 @@ if args.cast:
                 cast) for cast in data['casts']]
             cursor = data.get("cursor")
 
-            bulk_index_casts(casts, session)
+            overlap = bulk_index_casts(casts, session)
 
-            if cursor is None:
+            if cursor is None or overlap:
                 break
             else:
                 time.sleep(1)
@@ -323,6 +323,7 @@ class ERC1155Metadata(Base):
 
     completion = openai.ChatCompletion.create(
         model="gpt-3.5-turbo",
+        temperature=0,
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": initial_prompt},

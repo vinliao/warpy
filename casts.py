@@ -63,14 +63,19 @@ def get_all_casts_from_warpcast(key: str, timestamp: int):
     return cast_arr
 
 
-def bulk_index_casts(casts, session):
+def bulk_index_casts(casts, session) -> bool:
     cast_insert_query = text("""
     INSERT IGNORE INTO casts (hash, thread_hash, parent_hash, text, timestamp, author_fid)
     VALUES (:hash, :thread_hash, :parent_hash, :text, :timestamp, :author_fid)
     """)
-    session.execute(cast_insert_query, casts)
-    print(f"Indexed {len(casts)} casts")
+    result = session.execute(cast_insert_query, casts)
     session.commit()
+
+    inserted_rows = result.rowcount
+    if inserted_rows != len(casts):
+        return True  # means data overlaps in the db, can stop indexing
+    else:
+        return False
 
 
 def extract_warpcast_cast_data(cast):

@@ -87,12 +87,12 @@ def get_all_users_from_warpcast(key: str):
     return users
 
 
-def get_warpcast_location(user) -> Optional[Location]:
+def get_warpcast_location(user) -> Optional[dict]:
     if 'location' in user['profile']:
         place_id = user['profile']['location'].get('placeId')
         if place_id:
             description = user['profile']['location'].get('description')
-            return Location(place_id=place_id, description=description)
+            return {'place_id': place_id, 'description': description}
     return None
 
 

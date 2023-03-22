@@ -34,5 +34,6 @@ prompt.txt
 
 ensdata_fids.csv
 *.db
+*.parquet
 
 alembic.ini

@@ -57,16 +57,16 @@ def set_searchcaster_data(user: UserClass, data: list[SearchcasterDataClass]) ->
     return user
 
 
-"""
-Index users from Warpcast and Searchcaster:
+# """
+# Index users from Warpcast and Searchcaster:
 
-1. get all users from Warpcast
-2. get all locations, save to db
-3. check all user against db, filter out users that are already in the db
-4. save users to csv
-5. for each user, get registered_at, external_address, farcaster_address from Searchcaster
-6. save users to db
-"""
+# 1. get all users from Warpcast
+# 2. get all locations, save to db
+# 3. check all user against db, filter out users that are already in the db
+# 4. save users to csv
+# 5. for each user, get registered_at, external_address, farcaster_address from Searchcaster
+# 6. save users to db
+# """
 if args.user:
     users_filename = 'users.csv'
     engine = create_engine(os.getenv('PLANETSCALE_URL'), echo=True)

@@ -33,7 +33,7 @@ parser.add_argument('-q', '--query', nargs='+', type=str,
 args = parser.parse_args()
 
 
-def fix_user_types(user: UserClass) -> UserClass:
+def fix_user_types(user: UserDataClass) -> UserDataClass:
     user.fid = int(user.fid)
     user.verified = bool(user.verified)
     user.follower_count = int(user.follower_count)
@@ -43,7 +43,7 @@ def fix_user_types(user: UserClass) -> UserClass:
     return user
 
 
-def set_searchcaster_data(user: UserClass, data: list[SearchcasterDataClass]) -> UserClass:
+def set_searchcaster_data(user: UserDataClass, data: list[SearchcasterDataClass]) -> UserDataClass:
     if len(data) == 0:
         return user
 
@@ -76,7 +76,7 @@ if args.user:
     if not os.path.exists(users_filename):
         all_users = get_all_users_from_warpcast(warpcast_hub_key)
         warpcast_data = [extract_warpcast_user_data(u) for u in all_users]
-        users = [UserClass(**data) for data in warpcast_data]
+        users = [UserDataClass(**data) for data in warpcast_data]
 
         warpcast_locations = [get_warpcast_location(
             u) for u in all_users if get_warpcast_location(u) is not None]
@@ -97,7 +97,7 @@ if args.user:
 
         with open(users_filename, mode='w', newline='') as csv_file:
             writer = csv.writer(csv_file)
-            writer.writerow(UserClass.__annotations__.keys())
+            writer.writerow(UserDataClass.__annotations__.keys())
             for user in users:
                 writer.writerow(asdict(user).values())
 
@@ -105,7 +105,7 @@ if args.user:
     with open(users_filename, mode='r') as csv_file:
         reader = csv.reader(csv_file)
         next(reader)
-        users = [UserClass(*u) for u in list(reader)]
+        users = [UserDataClass(*u) for u in list(reader)]
 
     users = [fix_user_types(u) for u in users]
 

@@ -5,58 +5,46 @@ from models import Location
 import time
 import asyncio
 import aiohttp
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from typing import Optional
+import polars as pl
+from typing import List
 
 load_dotenv()
 warpcast_hub_key = os.getenv("WARPCAST_HUB_KEY")
 
 
+# @dataclass(frozen=True)
+# class EthereumAddressDataClass:
+#     address: str
+#     ens: str
+#     url: str
+#     github: str
+#     twitter: str
+#     discord: str
+#     email: str
+#     telegram: str
+
+
 @dataclass(frozen=True)
-class SearchcasterDataClass:
-    fid: int
-    farcaster_address: str
-    external_address: str
-    registered_at: int
-
-
-# this is for the external address table
-@dataclass(frozen=True)
-class EnsdataDataClass:
-    address: str
-    ens: str
-    url: str
-    github: str
-    twitter: str
-    discord: str
-    email: str
-    telegram: str
-
-
-@dataclass
-class UserClass:
+class UserDataClass:
     fid: int
     username: str
     display_name: str
     verified: bool
     pfp_url: str
-    follower_count: int
-    following_count: int
-    location_place_id: str = None
-    bio_text: str = None
-    farcaster_address: str = None
-    external_address: str = None
-    registered_at: int = None
+    farcaster_address: str
+    external_address: str
+    registered_at: int
+    bio_text: str
 
 # ============================================================
 # ====================== WARPCAST ============================
 # ============================================================
 
 
-def get_users_from_warpcast(key: str, cursor: str = None):
-    # have cursor in url if cursor exists, use ternary
-
-    url = f"https://api.warpcast.com/v2/recent-users?cursor={cursor}&limit=1000" if cursor else "https://api.warpcast.com/v2/recent-users?limit=1000"
+def get_users_from_warpcast(key: str, cursor: str = None, limit: int = None):
+    url = f"https://api.warpcast.com/v2/recent-users?cursor={cursor}&limit={limit}" if cursor else f"https://api.warpcast.com/v2/recent-users?limit={limit}"
 
     print(f"Fetching from {url}")
 
@@ -103,16 +91,8 @@ def extract_warpcast_user_data(user):
         'display_name': user['displayName'],
         'verified': user['pfp']['verified'] if 'pfp' in user else False,
         'pfp_url': user['pfp']['url'] if 'pfp' in user else '',
-        'follower_count': user['followerCount'],
-        'following_count': user['followingCount'],
         'bio_text': user['profile']['bio']['text'] if 'bio' in user['profile'] else None,
-        'location_place_id': user['profile']['location']['placeId'] if 'location' in user['profile'] else None
     }
-
-
-# ============================================================
-# ====================== SEARCHCASTER ========================
-# ============================================================
 
 
 async def get_single_user_from_searchcaster(username):
@@ -122,6 +102,9 @@ async def get_single_user_from_searchcaster(username):
 
     async with aiohttp.ClientSession() as session:
         async with session.get(url) as response:
+            # Sleep between requests to avoid rate limiting
+            await asyncio.sleep(1)
+
             json_data = await response.json()
             return json_data[0]
 
@@ -133,46 +116,53 @@ async def get_users_from_searchcaster(usernames):
     return users
 
 
-def extract_searchcaster_user_data(data) -> SearchcasterDataClass:
-    return SearchcasterDataClass(
-        fid=data['body']['id'],
-        farcaster_address=data['body']['address'],
-        external_address=data['connectedAddress'],
-        registered_at=data['body']['registeredAt']
-    )
+def extract_searchcaster_user_data(data):
+    return {
+        'fid': data['body']['id'],
+        'farcaster_address': data['body']['address'],
+        'external_address': data['connectedAddress'],
+        'registered_at': data['body']['registeredAt']
+    }
 
 
-# ============================================================
-# ====================== ENSDATA =============================
-# ============================================================
+def merge_user_data(warpcast_data: List[dict], searchcaster_data: List[dict]) -> List[UserDataClass]:
+    merged_data = []
+
+    for warpcast_user in warpcast_data:
+        searchcaster_user = next((user for user in searchcaster_data if user.get(
+            'fid') == warpcast_user.get('fid')), {})
+
+        user_data_dict = {**warpcast_user, **searchcaster_user}
+        merged_data.append(UserDataClass(**user_data_dict))
+
+    return merged_data
 
 
-async def get_single_user_from_ensdata(address: str):
-    url = f'https://ensdata.net/{address}'
+async def main():
+    warpcast_users = get_users_from_warpcast(warpcast_hub_key, None, 50)
+    warpcast_user_data = [extract_warpcast_user_data(
+        user) for user in warpcast_users['users']]
 
-    print(f"Fetching {address} from {url}")
+    usernames = [user['username'] for user in warpcast_users['users']]
 
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url) as response:
-            json_data = await response.json()
-            return json_data
+    # get users from searchcaster in batches of 50
+    batch_size = 20
+    searchcaster_users = []
+    for i in range(0, len(usernames), batch_size):
+        batch = usernames[i:i+batch_size]
+        searchcaster_users += await get_users_from_searchcaster(batch)
+        time.sleep(1)
+
+    # # get users from searchcaster in batches of 50, extract data, merge to df, write to parquet
+    # searchcaster_users = await get_users_from_searchcaster(usernames)
+    searchcaster_user_data = [extract_searchcaster_user_data(
+        user) for user in searchcaster_users]
+
+    merged_user_data = merge_user_data(
+        warpcast_user_data, searchcaster_user_data)
+    users_df = pl.DataFrame([asdict(user) for user in merged_user_data])
+    users_df.write_parquet('users.parquet')
 
 
-async def get_users_from_ensdata(addresses: list[str]):
-    tasks = [asyncio.create_task(get_single_user_from_ensdata(address))
-             for address in addresses]
-    users = await asyncio.gather(*tasks)
-    return users
-
-
-def extract_ensdata_user_data(raw_data) -> EnsdataDataClass:
-    return EnsdataDataClass(
-        address=raw_data.get('address'),
-        ens=raw_data.get('ens'),
-        url=raw_data.get('url'),
-        github=raw_data.get('github'),
-        twitter=raw_data.get('twitter'),
-        telegram=raw_data.get('telegram'),
-        email=raw_data.get('email'),
-        discord=raw_data.get('discord')
-    )
+if __name__ == '__main__':
+    asyncio.run(main())

@@ -10,7 +10,9 @@ import duckdb
 parser = argparse.ArgumentParser()
 
 parser.add_argument('-q', '--query',
-                    help='Query Farcaster data with natural language')
+                    help='Query Farcaster data with natural language.')
+parser.add_argument('--raw',
+                    help='Query Farcaster data with SQL.')
 
 args = parser.parse_args()
 
@@ -57,3 +59,6 @@ if args.query:
 
     print(f"SQL from ChatGPT: \n\n{reply}\n")
     print(duckdb.query(reply).pl())
+
+if args.raw:
+    print(duckdb.query(args.raw).pl())

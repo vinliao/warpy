@@ -43,7 +43,7 @@ class UserDataClass:
 # ============================================================
 
 
-def get_users_from_warpcast(key: str, cursor: str = None, limit: int = None):
+def get_users_from_warpcast(key: str, cursor: str = None, limit: int = 1000):
     url = f"https://api.warpcast.com/v2/recent-users?cursor={cursor}&limit={limit}" if cursor else f"https://api.warpcast.com/v2/recent-users?limit={limit}"
 
     print(f"Fetching from {url}")
@@ -145,24 +145,29 @@ async def main():
 
     usernames = [user['username'] for user in warpcast_users['users']]
 
-    # get users from searchcaster in batches of 50
-    batch_size = 20
-    searchcaster_users = []
+    batch_size = 5
     for i in range(0, len(usernames), batch_size):
+        warpcast_user_batch = warpcast_user_data[i:i+batch_size]
         batch = usernames[i:i+batch_size]
-        searchcaster_users += await get_users_from_searchcaster(batch)
-        time.sleep(1)
+        searchcaster_users = await get_users_from_searchcaster(batch)
 
-    # # get users from searchcaster in batches of 50, extract data, merge to df, write to parquet
-    # searchcaster_users = await get_users_from_searchcaster(usernames)
-    searchcaster_user_data = [extract_searchcaster_user_data(
-        user) for user in searchcaster_users]
+        # append to users.parquet, unique PK is fid
+        searchcaster_user_data = [extract_searchcaster_user_data(
+            user) for user in searchcaster_users]
 
-    merged_user_data = merge_user_data(
-        warpcast_user_data, searchcaster_user_data)
-    users_df = pl.DataFrame([asdict(user) for user in merged_user_data])
-    users_df.write_parquet('users.parquet')
+        merged_user_data = merge_user_data(
+            warpcast_user_batch, searchcaster_user_data)
 
+        # TODO: duplicate rows
+        if os.path.exists('users.parquet'):
+            users_df = pl.DataFrame(merged_user_data)
+            users_table = pl.read_parquet('users.parquet')
+            merged_table = users_table.vstack(users_df, in_place=True)
+            merged_table.unique(subset='fid')
+            merged_table.write_parquet('users.parquet')
+        else:
+            users_df = pl.DataFrame(merged_user_data)
+            users_df.write_parquet('users.parquet')
 
 if __name__ == '__main__':
     asyncio.run(main())

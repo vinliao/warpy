@@ -2,14 +2,12 @@ import openai
 from users import *
 from casts import *
 import os
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy import create_engine, text, func
 import argparse
 import duckdb
 
 parser = argparse.ArgumentParser()
 
-parser.add_argument('-q', '--query',
+parser.add_argument('query', nargs='?',
                     help='Query Farcaster data with natural language.')
 parser.add_argument('--raw',
                     help='Query Farcaster data with SQL.')
@@ -37,7 +35,7 @@ if args.query:
         registered_at: int
         bio_text: str
 
-    # casts2.parquet
+    # casts.parquet
     @dataclass(frozen=True)
     class CastDataClass:
         hash: str

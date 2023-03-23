@@ -1,16 +1,16 @@
 from dotenv import load_dotenv
 import os
 import requests
-from models import Cast
 import time
-from typing import Optional
-from sqlalchemy import text
 from requests.exceptions import RequestException, JSONDecodeError
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 import requests
 import time
 import polars as pl
+import pandas as pd
 from dataclasses import dataclass
+import duckdb
+import datetime
 from typing import List
 
 
@@ -62,8 +62,13 @@ def get_all_casts_from_warpcast(key: str, timestamp: int):
 
         casts = [extract_warpcast_cast_data(cast) for cast in data['casts']]
 
+        time_diff = datetime.timedelta(
+            milliseconds=casts[0]['timestamp'] - timestamp)
+
+        time_diff_str = str(time_diff).split('.')[0]
+
         print(
-            f"timestamp: {timestamp}, cast timestamp: {casts[0]['timestamp']}")
+            f"Processing casts with timestamp >= {timestamp}. Next cast timestamp: {casts[0]['timestamp']} ({time_diff_str} left)")
 
         if casts[0]['timestamp'] < timestamp:
             break
@@ -92,20 +97,40 @@ def extract_warpcast_cast_data(cast):
     }
 
 
-def dump_casts_to_parquet_file(casts, filename: str):
-    casts = [CastDataClass(**cast) for cast in casts]
-    print(casts)
+def get_monthly_filename(timestamp: int, suffix: str = 'parquet'):
+    dt = datetime.datetime.fromtimestamp(timestamp // 1000)
+    return f"casts_{dt.year}_{dt.month:02d}.{suffix}"
 
-    df = pl.DataFrame(casts)
-    df.write_parquet(filename)
+
+def dump_casts_to_parquet_file(casts: List[CastDataClass], append: bool = False):
+    casts = [CastDataClass(**cast) for cast in casts]
+    df = pd.DataFrame(casts)
+
+    for (year, month), group in df.groupby([df.timestamp // 1000 // 3600 // 24 // 30, df.timestamp // 1000 // 3600 // 24 % 30]):
+        filename = get_monthly_filename(group.timestamp.min())
+
+        if os.path.exists(filename) and append:
+            existing_df = pd.read_parquet(filename)
+            merged_df = pd.concat([existing_df, group], axis=0)
+            merged_df.to_parquet(filename, index=False)
+        else:
+            group.to_parquet(filename, index=False)
 
 
 def main():
-    casts = get_all_casts_from_warpcast(warpcast_hub_key, 1679513539000)
-    dump_casts_to_parquet_file(casts, 'casts2.parquet')
+    filename = 'casts.parquet'
 
-# use the functions above to dump to parquet files
+    if not os.path.exists(filename):
+        casts = get_all_casts_from_warpcast(warpcast_hub_key, 0)
+        dump_casts_to_parquet_file(casts, filename)
+    else:
+        latest_timestamp = duckdb.query(
+            f"SELECT timestamp FROM {filename} ORDER BY timestamp DESC").fetchone()[0]
+        timestamp = latest_timestamp if latest_timestamp else 0
+        casts = get_all_casts_from_warpcast(warpcast_hub_key, timestamp)
+        dump_casts_to_parquet_file(
+            casts, filename, append=bool(latest_timestamp))
 
 
-if __name__ == '__main__':
-    main()
+# if __name__ == '__main__':
+#     main()

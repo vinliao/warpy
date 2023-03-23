@@ -49,7 +49,7 @@ if args.query:
         author_fid: int
         parent_hash: str = None
 
-    To query from multiple files, you can do `SELECT timestamp FROM read_parquet('casts*.parquet')`
+    To query from multiple files, you can do `SELECT timestamp FROM read_parquet('casts*.parquet')`. You can also use read_parquet(['file1.parquet', 'file2.parquet']).
 
     Your job is to turn user queries (in natural language) to SQL. Only return the SQL and nothing else. Don't explain, don't say "here's your query." Just give the SQL. Say "Yes" if you understand.
     """

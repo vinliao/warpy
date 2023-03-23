@@ -97,21 +97,28 @@ def extract_warpcast_cast_data(cast):
     }
 
 
-def dump_casts_to_parquet_file(casts: List[CastDataClass], append: bool = False):
+def dump_casts_to_parquet_file(casts: List[CastDataClass], append: bool = True):
     casts = [CastDataClass(**cast) for cast in casts]
-    df = pd.DataFrame(casts)
-    df['year'] = pd.to_datetime(df['timestamp'], unit='ms').dt.year
-    df['month'] = pd.to_datetime(df['timestamp'], unit='ms').dt.month
+    new_df = pd.DataFrame(casts)
+    new_df['year'] = pd.to_datetime(new_df['timestamp'], unit='ms').dt.year
+    new_df['month'] = pd.to_datetime(new_df['timestamp'], unit='ms').dt.month
 
-    for (year, month), group in df.groupby(['year', 'month']):
+    for (year, month), group in new_df.groupby(['year', 'month']):
         filename = get_monthly_filename(group.timestamp.min())
 
         if os.path.exists(filename) and append:
             existing_df = pd.read_parquet(filename)
-            merged_df = pd.concat([existing_df, group], axis=0)
+
+            # Removing duplicates by merging on a unique identifier, such as 'hash'
+            # Assuming 'hash' is a unique identifier for each cast
+            merged_df = pd.concat([existing_df, group],
+                                  axis=0).drop_duplicates(subset=['hash'])
+
             merged_df.to_parquet(filename, index=False)
         else:
-            group.to_parquet(filename, index=False)
+            # Saving only unique casts from the new data, in case the parquet file doesn't exist yet
+            group.drop_duplicates(subset=['hash']).to_parquet(
+                filename, index=False)
 
 
 def main():

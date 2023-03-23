@@ -8,6 +8,7 @@ import aiohttp
 from dataclasses import dataclass, asdict
 from typing import Optional
 import polars as pl
+import pandas as pd
 from typing import List
 
 load_dotenv()
@@ -58,8 +59,7 @@ def get_users_from_warpcast(key: str, cursor: str = None, limit: int = 1000):
             "cursor": json_data.get("next", {}).get('cursor') if json_data.get("next") else None}
 
 
-def get_all_users_from_warpcast(key: str):
-    cursor = None
+def get_all_users_from_warpcast(key: str, cursor: str = None):
     users = []
     while True:
         data = get_users_from_warpcast(key, cursor)
@@ -73,15 +73,6 @@ def get_all_users_from_warpcast(key: str):
             continue
 
     return users
-
-
-def get_warpcast_location(user) -> Optional[dict]:
-    if 'location' in user['profile']:
-        place_id = user['profile']['location'].get('placeId')
-        if place_id:
-            description = user['profile']['location'].get('description')
-            return {'place_id': place_id, 'description': description}
-    return None
 
 
 def extract_warpcast_user_data(user):
@@ -101,12 +92,25 @@ async def get_single_user_from_searchcaster(username):
     print(f"Fetching {username} from {url}")
 
     async with aiohttp.ClientSession() as session:
-        async with session.get(url) as response:
-            # Sleep between requests to avoid rate limiting
-            await asyncio.sleep(1)
+        while True:
+            try:
+                timeout = aiohttp.ClientTimeout(total=10)
+                async with session.get(url, timeout=timeout) as response:
+                    # Sleep between requests to avoid rate limiting
+                    await asyncio.sleep(1)
 
-            json_data = await response.json()
-            return json_data[0]
+                    response.raise_for_status()
+                    json_data = await response.json()
+                    if json_data:
+                        return json_data[0]
+                    else:
+                        raise ValueError(
+                            f"No results found for username {username}")
+            except aiohttp.ClientResponseError as e:
+                if e.status == 504:
+                    print(f"Timeout occurred for {username}. Retrying...")
+                else:
+                    raise
 
 
 async def get_users_from_searchcaster(usernames):
@@ -139,35 +143,33 @@ def merge_user_data(warpcast_data: List[dict], searchcaster_data: List[dict]) ->
 
 
 async def main():
-    warpcast_users = get_users_from_warpcast(warpcast_hub_key, None, 50)
+    warpcast_users = get_all_users_from_warpcast(
+        warpcast_hub_key)
     warpcast_user_data = [extract_warpcast_user_data(
-        user) for user in warpcast_users['users']]
+        user) for user in warpcast_users]
+    usernames = [user['username'] for user in warpcast_users]
 
-    usernames = [user['username'] for user in warpcast_users['users']]
-
-    batch_size = 5
+    batch_size = 50
     for i in range(0, len(usernames), batch_size):
         warpcast_user_batch = warpcast_user_data[i:i+batch_size]
         batch = usernames[i:i+batch_size]
         searchcaster_users = await get_users_from_searchcaster(batch)
 
-        # append to users.parquet, unique PK is fid
         searchcaster_user_data = [extract_searchcaster_user_data(
             user) for user in searchcaster_users]
 
         merged_user_data = merge_user_data(
             warpcast_user_batch, searchcaster_user_data)
 
-        # TODO: duplicate rows
         if os.path.exists('users.parquet'):
-            users_df = pl.DataFrame(merged_user_data)
-            users_table = pl.read_parquet('users.parquet')
-            merged_table = users_table.vstack(users_df, in_place=True)
-            merged_table.unique(subset='fid')
-            merged_table.write_parquet('users.parquet')
+            users_df = pd.DataFrame(merged_user_data)
+            users_table = pd.read_parquet('users.parquet')
+            merged_table = pd.concat([users_table, users_df]).drop_duplicates(
+                subset='fid', keep='last')
+            merged_table.to_parquet('users.parquet')
         else:
-            users_df = pl.DataFrame(merged_user_data)
-            users_df.write_parquet('users.parquet')
+            users_df = pd.DataFrame(merged_user_data)
+            users_df.to_parquet('users.parquet')
 
 if __name__ == '__main__':
     asyncio.run(main())

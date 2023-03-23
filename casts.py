@@ -97,16 +97,13 @@ def extract_warpcast_cast_data(cast):
     }
 
 
-def get_monthly_filename(timestamp: int, suffix: str = 'parquet'):
-    dt = datetime.datetime.fromtimestamp(timestamp // 1000)
-    return f"casts_{dt.year}_{dt.month:02d}.{suffix}"
-
-
 def dump_casts_to_parquet_file(casts: List[CastDataClass], append: bool = False):
     casts = [CastDataClass(**cast) for cast in casts]
     df = pd.DataFrame(casts)
+    df['year'] = pd.to_datetime(df['timestamp'], unit='ms').dt.year
+    df['month'] = pd.to_datetime(df['timestamp'], unit='ms').dt.month
 
-    for (year, month), group in df.groupby([df.timestamp // 1000 // 3600 // 24 // 30, df.timestamp // 1000 // 3600 // 24 % 30]):
+    for (year, month), group in df.groupby(['year', 'month']):
         filename = get_monthly_filename(group.timestamp.min())
 
         if os.path.exists(filename) and append:
@@ -125,12 +122,40 @@ def main():
         dump_casts_to_parquet_file(casts, filename)
     else:
         latest_timestamp = duckdb.query(
-            f"SELECT timestamp FROM {filename} ORDER BY timestamp DESC").fetchone()[0]
+            f"SELECT timestamp FROM read_parquet('casts*.parquet') ORDER BY timestamp DESC").fetchone()[0]
         timestamp = latest_timestamp if latest_timestamp else 0
         casts = get_all_casts_from_warpcast(warpcast_hub_key, timestamp)
         dump_casts_to_parquet_file(
-            casts, filename, append=bool(latest_timestamp))
+            casts, append=bool(latest_timestamp))
 
 
-# if __name__ == '__main__':
-#     main()
+def get_monthly_filename(timestamp: int) -> str:
+    dt = pd.to_datetime(timestamp, unit='ms')
+    return f"casts_{dt.year:04d}_{dt.month:02d}.parquet"
+
+
+def split_existing_parquet_to_monthly_files(existing_filename: str):
+    if not os.path.exists(existing_filename):
+        print(f"{existing_filename} does not exist!")
+        return
+
+    existing_df = pd.read_parquet(existing_filename)
+    existing_df['year'] = pd.to_datetime(
+        existing_df['timestamp'], unit='ms').dt.year
+    existing_df['month'] = pd.to_datetime(
+        existing_df['timestamp'], unit='ms').dt.month
+
+    for (year, month), group in existing_df.groupby(['year', 'month']):
+        filename = get_monthly_filename(group.timestamp.min())
+        print(
+            f"Processing group for year={year}, month={month}, filename={filename}")
+
+        if os.path.exists(filename):
+            print(f"{filename} already exists. Skipping.")
+        else:
+            print(f"Saving to {filename}")
+            group.to_parquet(filename, index=False)
+
+
+if __name__ == '__main__':
+    main()

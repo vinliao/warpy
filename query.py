@@ -4,6 +4,8 @@ from casts import *
 import os
 import argparse
 import duckdb
+from datetime import datetime
+import pytz
 
 parser = argparse.ArgumentParser()
 
@@ -11,6 +13,8 @@ parser.add_argument('query', nargs='?',
                     help='Query Farcaster data with natural language.')
 parser.add_argument('--raw',
                     help='Query Farcaster data with SQL.')
+parser.add_argument('--test',
+                    help='For testing purposes.')
 
 args = parser.parse_args()
 
@@ -35,7 +39,7 @@ if args.query:
         registered_at: int
         bio_text: str
 
-    # casts.parquet
+    # f"casts_{dt.year:04d}_{dt.month:02d}.parquet"
     @dataclass(frozen=True)
     class CastDataClass:
         hash: str
@@ -45,6 +49,7 @@ if args.query:
         author_fid: int
         parent_hash: str = None
 
+    To query from multiple files, you can do `SELECT timestamp FROM read_parquet('casts*.parquet')`
 
     Your job is to turn user queries (in natural language) to SQL. Only return the SQL and nothing else. Don't explain, don't say "here's your query." Just give the SQL. Say "Yes" if you understand.
     """

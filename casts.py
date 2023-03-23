@@ -6,9 +6,26 @@ import time
 from typing import Optional
 from sqlalchemy import text
 from requests.exceptions import RequestException, JSONDecodeError
+from dataclasses import dataclass, asdict
+import requests
+import time
+import polars as pl
+from dataclasses import dataclass
+from typing import List
+
 
 load_dotenv()
 warpcast_hub_key = os.getenv("WARPCAST_HUB_KEY")
+
+
+@dataclass(frozen=True)
+class CastDataClass:
+    hash: str
+    thread_hash: str
+    text: str
+    timestamp: int
+    author_fid: int
+    parent_hash: str = None
 
 
 # ============================================================
@@ -45,9 +62,10 @@ def get_all_casts_from_warpcast(key: str, timestamp: int):
 
         casts = [extract_warpcast_cast_data(cast) for cast in data['casts']]
 
-        print(f"timestamp: {timestamp}, cast timestamp: {casts[0].timestamp}")
+        print(
+            f"timestamp: {timestamp}, cast timestamp: {casts[0]['timestamp']}")
 
-        if casts[0].timestamp < timestamp:
+        if casts[0]['timestamp'] < timestamp:
             break
 
         cast_arr.extend(casts)
@@ -63,27 +81,31 @@ def get_all_casts_from_warpcast(key: str, timestamp: int):
     return cast_arr
 
 
-def bulk_index_casts(casts, session) -> bool:
-    cast_insert_query = text("""
-    INSERT IGNORE INTO casts (hash, thread_hash, parent_hash, text, timestamp, author_fid)
-    VALUES (:hash, :thread_hash, :parent_hash, :text, :timestamp, :author_fid)
-    """)
-    result = session.execute(cast_insert_query, casts)
-    session.commit()
-
-    inserted_rows = result.rowcount
-    if inserted_rows != len(casts):
-        return True  # means data overlaps in the db, can stop indexing
-    else:
-        return False
-
-
 def extract_warpcast_cast_data(cast):
     return {
         "hash": cast['hash'],
         "thread_hash": cast['threadHash'],
-        "parent_hash": cast.get('parentHash', ''),
+        "parent_hash": cast.get('parentHash', None),
         "text": cast['text'],
         "timestamp": cast['timestamp'],
         "author_fid": cast['author']['fid']
     }
+
+
+def dump_casts_to_parquet_file(casts, filename: str):
+    casts = [CastDataClass(**cast) for cast in casts]
+    print(casts)
+
+    df = pl.DataFrame(casts)
+    df.write_parquet(filename)
+
+
+def main():
+    casts = get_all_casts_from_warpcast(warpcast_hub_key, 1679513539000)
+    dump_casts_to_parquet_file(casts, 'casts2.parquet')
+
+# use the functions above to dump to parquet files
+
+
+if __name__ == '__main__':
+    main()

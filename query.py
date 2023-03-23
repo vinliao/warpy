@@ -37,6 +37,16 @@ if args.query:
         registered_at: int
         bio_text: str
 
+    # casts2.parquet
+    @dataclass(frozen=True)
+    class CastDataClass:
+        hash: str
+        thread_hash: str
+        text: str
+        timestamp: int
+        author_fid: int
+        parent_hash: str = None
+
 
     Your job is to turn user queries (in natural language) to SQL. Only return the SQL and nothing else. Don't explain, don't say "here's your query." Just give the SQL. Say "Yes" if you understand.
     """

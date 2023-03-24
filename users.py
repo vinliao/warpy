@@ -112,7 +112,7 @@ def extract_warpcast_user_data(user):
         bio_text=user.get('profile', {}).get('bio', {}).get('text', '')
     )
 
-    return user_data, user_extra_data, location
+    return user_data, user_extra_data, location if location.id else None
 
 
 async def get_single_user_from_searchcaster(username):
@@ -184,7 +184,7 @@ async def update_unregistered_users():
         unregistered_fids)]['username'].tolist()
 
     if len(unregistered_usernames) > 0:
-        batch_size = 5
+        batch_size = 50
         updated_users_extra_df = users_extra_df.set_index('fid')
 
         for i in range(0, len(unregistered_usernames), batch_size):
@@ -209,7 +209,7 @@ async def main():
         await update_unregistered_users()
     else:
         warpcast_users = get_users_from_warpcast(
-            warpcast_hub_key, None, 50)['users']
+            warpcast_hub_key, None, 100)['users']
 
         warpcast_user_data = [extract_warpcast_user_data(
             user) for user in warpcast_users]
@@ -217,7 +217,8 @@ async def main():
         # Extract the user_data, user_extra_data, and location lists
         user_data_list = [data[0] for data in warpcast_user_data]
         user_extra_data_list = [data[1] for data in warpcast_user_data]
-        location_list = [data[2] for data in warpcast_user_data]
+        location_list = [data[2]
+                         for data in warpcast_user_data if data[2] is not None]
 
         pl.DataFrame(user_data_list).write_parquet('users.parquet')
         pl.DataFrame(user_extra_data_list).write_parquet(

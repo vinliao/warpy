@@ -5,26 +5,41 @@ from models import Location
 import time
 import asyncio
 import aiohttp
-from dataclasses import dataclass, asdict
-from typing import Optional
-import polars as pl
+from dataclasses import dataclass, asdict, field
 import pandas as pd
-from typing import List
+from typing import List, Optional
+import polars as pl
+import sys
 
 load_dotenv()
 warpcast_hub_key = os.getenv("WARPCAST_HUB_KEY")
 
 
-# @dataclass(frozen=True)
-# class EthereumAddressDataClass:
-#     address: str
-#     ens: str
-#     url: str
-#     github: str
-#     twitter: str
-#     discord: str
-#     email: str
-#     telegram: str
+"""
+@dataclass(frozen=True)
+class UserEnsDataClass
+    address: str
+    ens: str
+    # other info...
+"""
+
+
+@dataclass(frozen=True)
+class UserExtraDataClass:
+    fid: int
+    following_count: int
+    follower_count: int
+    location_id: Optional[str] = None
+    verified: bool = False
+    farcaster_address: Optional[str] = None
+    external_address: Optional[str] = None
+    registered_at: int = -1
+
+
+@dataclass(frozen=True)
+class LocationDataClass:
+    id: str
+    description: str
 
 
 @dataclass(frozen=True)
@@ -32,12 +47,9 @@ class UserDataClass:
     fid: int
     username: str
     display_name: str
-    verified: bool
     pfp_url: str
-    farcaster_address: str
-    external_address: str
-    registered_at: int
     bio_text: str
+
 
 # ============================================================
 # ====================== WARPCAST ============================
@@ -76,14 +88,31 @@ def get_all_users_from_warpcast(key: str, cursor: str = None):
 
 
 def extract_warpcast_user_data(user):
-    return {
-        'fid': user['fid'],
-        'username': user['username'],
-        'display_name': user['displayName'],
-        'verified': user['pfp']['verified'] if 'pfp' in user else False,
-        'pfp_url': user['pfp']['url'] if 'pfp' in user else '',
-        'bio_text': user['profile']['bio']['text'] if 'bio' in user['profile'] else None,
-    }
+    location_data = user.get('profile', {}).get('location', {})
+    location = LocationDataClass(
+        id=location_data.get('placeId', ''),
+        description=location_data.get('description', '')
+    )
+
+    user_extra_data = UserExtraDataClass(
+        fid=user['fid'],
+        following_count=user.get('followingCount', 0),
+        follower_count=user.get('followerCount', 0),
+        location_id=location.id,
+        verified=user['pfp']['verified'] if 'pfp' in user else False,
+        farcaster_address=None,  # Update this value as needed
+        registered_at=-1  # Update this value as needed
+    )
+
+    user_data = UserDataClass(
+        fid=user['fid'],
+        username=user['username'],
+        display_name=user['displayName'],
+        pfp_url=user['pfp']['url'] if 'pfp' in user else '',
+        bio_text=user.get('profile', {}).get('bio', {}).get('text', '')
+    )
+
+    return user_data, user_extra_data, location
 
 
 async def get_single_user_from_searchcaster(username):
@@ -142,34 +171,59 @@ def merge_user_data(warpcast_data: List[dict], searchcaster_data: List[dict]) ->
     return merged_data
 
 
+async def update_unregistered_users():
+    # Read data from user_extra.parquet and filter rows where registered_at is -1
+    users_extra_df = pd.read_parquet('user_extra.parquet')
+    unregistered_users = users_extra_df[users_extra_df['registered_at'] == -1]
+
+    # get fids from unregistered_users, then get the usernames from users.parquet
+    unregistered_fids = unregistered_users['fid'].tolist()
+    users_df = pd.read_parquet('users.parquet')
+
+    unregistered_usernames = users_df[users_df['fid'].isin(
+        unregistered_fids)]['username'].tolist()
+
+    if len(unregistered_usernames) > 0:
+        batch_size = 5
+        updated_users_extra_df = users_extra_df.set_index('fid')
+
+        for i in range(0, len(unregistered_usernames), batch_size):
+            batch_usernames = unregistered_usernames[i:i + batch_size]
+            searchcaster_users = await get_users_from_searchcaster(batch_usernames)
+            searchcaster_user_data = [extract_searchcaster_user_data(
+                user) for user in searchcaster_users]
+
+            # Create a Pandas DataFrame from the searchcaster user data
+            searchcaster_user_data_df = pd.DataFrame(searchcaster_user_data)
+
+            # Update updated_users_extra_df with data from searchcaster_user_data_df
+            updated_users_extra_df.update(
+                searchcaster_user_data_df.set_index('fid'))
+
+        updated_users_extra_df.reset_index(inplace=True)
+        updated_users_extra_df.to_parquet('user_extra.parquet')
+
+
 async def main():
-    warpcast_users = get_all_users_from_warpcast(
-        warpcast_hub_key)
-    warpcast_user_data = [extract_warpcast_user_data(
-        user) for user in warpcast_users]
-    usernames = [user['username'] for user in warpcast_users]
+    if '--extra' in sys.argv:
+        await update_unregistered_users()
+    else:
+        warpcast_users = get_users_from_warpcast(
+            warpcast_hub_key, None, 50)['users']
 
-    batch_size = 50
-    for i in range(0, len(usernames), batch_size):
-        warpcast_user_batch = warpcast_user_data[i:i+batch_size]
-        batch = usernames[i:i+batch_size]
-        searchcaster_users = await get_users_from_searchcaster(batch)
+        warpcast_user_data = [extract_warpcast_user_data(
+            user) for user in warpcast_users]
 
-        searchcaster_user_data = [extract_searchcaster_user_data(
-            user) for user in searchcaster_users]
+        # Extract the user_data, user_extra_data, and location lists
+        user_data_list = [data[0] for data in warpcast_user_data]
+        user_extra_data_list = [data[1] for data in warpcast_user_data]
+        location_list = [data[2] for data in warpcast_user_data]
 
-        merged_user_data = merge_user_data(
-            warpcast_user_batch, searchcaster_user_data)
+        pl.DataFrame(user_data_list).write_parquet('users.parquet')
+        pl.DataFrame(user_extra_data_list).write_parquet(
+            'user_extra.parquet')
+        pl.DataFrame(location_list).write_parquet('locations.parquet')
 
-        if os.path.exists('users.parquet'):
-            users_df = pd.DataFrame(merged_user_data)
-            users_table = pd.read_parquet('users.parquet')
-            merged_table = pd.concat([users_table, users_df]).drop_duplicates(
-                subset='fid', keep='last')
-            merged_table.to_parquet('users.parquet')
-        else:
-            users_df = pd.DataFrame(merged_user_data)
-            users_df.to_parquet('users.parquet')
 
 if __name__ == '__main__':
     asyncio.run(main())

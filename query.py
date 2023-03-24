@@ -26,18 +26,33 @@ if args.query:
     initial_prompt = """
     You are working with a database stored in parquet files. Each dataclass below represents a table. Each table lives in a parquet file. The data lives inside parquet files. All reference to tables must be replaced with 'parquet_file_name.parquet' (e.g. users.parquet). The data is in the same directory as this file.
 
-    # users.parquet
+    # Important note: if the query contains data that's not in the users.parquet schema, get the data from user_extra.parquet.
+    # example: `SELECT u.username FROM users.parquet u JOIN user_extra.parquet ue ON u.fid = ue.fid WHERE ue.follower_count > 50`
     @dataclass(frozen=True)
     class UserDataClass:
         fid: int
         username: str
         display_name: str
-        verified: bool
         pfp_url: str
-        farcaster_address: str
-        external_address: str
-        registered_at: int
         bio_text: str
+
+    # user_extra.parquet
+    @dataclass(frozen=True)
+    class UserExtraDataClass:
+        fid: int
+        following_count: int
+        follower_count: int
+        location_id: Optional[str] = None
+        verified: bool = False
+        farcaster_address: Optional[str] = None
+        external_address: Optional[str] = None
+        registered_at: int = -1
+
+    # locations.parquet
+    @dataclass(frozen=True)
+    class LocationDataClass:
+        id: str
+        description: str
 
     # f"casts_{dt.year:04d}_{dt.month:02d}.parquet"
     @dataclass(frozen=True)

@@ -1,3 +1,4 @@
+import re
 import openai
 from users import *
 from casts import *
@@ -21,17 +22,19 @@ args = parser.parse_args()
 
 def update_parquet_file_paths(query):
     # Find all occurrences of ".parquet" in the query
-    parquet_indices = [i for i in range(
-        len(query)) if query.startswith('.parquet', i)]
+    parquet_pattern = r'\b\w+\.parquet\b'
+    parquet_matches = re.finditer(parquet_pattern, query)
 
-    # Add "read_parquet" and "datasets/" prefix to each parquet file path
-    for index in parquet_indices:
-        start_index = query.rfind(' ', 0, index) + 1
-        end_index = index + len('.parquet')
+    # Replace each occurrence of "filename.parquet" with "read_parquet('datasets/filename.parquet')"
+    offset = 0
+    for match in parquet_matches:
+        start_index = match.start() + offset
+        end_index = match.end() + offset
         file_path = query[start_index:end_index]
-        if not file_path.startswith('read_parquet'):
-            updated_file_path = f"read_parquet('datasets/{file_path}')"
-            query = query[:start_index] + updated_file_path + query[end_index:]
+        updated_file_path = f"read_parquet('datasets/{file_path}')"
+        query = query[:start_index] + updated_file_path + query[end_index:]
+        offset += len(updated_file_path) - len(file_path)
+
     return query
 
 
@@ -101,6 +104,7 @@ if args.query:
     )
 
     reply = completion['choices'][0]['message']['content'].strip()
+    print(reply)
     reply = update_parquet_file_paths(reply)
 
     print(f"SQL from ChatGPT: \n\n{reply}\n")

@@ -1,14 +1,10 @@
 # Warpy (Beta)
 
-[Farcaster](https://github.com/farcasterxyz/protocol) is an Ethereum-based programmable social network. Warpy is a Python environment for doing data science with Farcaster data.
+[Farcaster](https://github.com/farcasterxyz/protocol) is an Ethereum-based programmable social network. Warpy provides open-source Farcaster datasets.
 
 To get started:
 
-1. Make a Python virtual environment (ex: `python3 -m venv venv`)
-2. Install dependencies `pip -r requirements.txt`
-3. Go to example.ipynb, run all cells
-4. Voila, a notebook with Farcater data!
+1. `pip install packagename`
+2. `warpy download --all` (will download all datasets to `./datasets`)
 
-It includes indexers (`users.py`, `casts.py` still TODO) that queries Farcaster data from various sources, and stores it in a SQLite database. To see what the tables and columns, check out `models.py`.
-
-(Note: more data will be added in the future!)
+TODO: datasets, schemas, and some examples on how to use.

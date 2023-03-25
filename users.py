@@ -173,12 +173,12 @@ def merge_user_data(warpcast_data: List[dict], searchcaster_data: List[dict]) ->
 
 async def update_unregistered_users():
     # Read data from user_extra.parquet and filter rows where registered_at is -1
-    users_extra_df = pd.read_parquet('user_extra.parquet')
+    users_extra_df = pd.read_parquet('./datasets/user_extra.parquet')
     unregistered_users = users_extra_df[users_extra_df['registered_at'] == -1]
 
     # get fids from unregistered_users, then get the usernames from users.parquet
     unregistered_fids = unregistered_users['fid'].tolist()
-    users_df = pd.read_parquet('users.parquet')
+    users_df = pd.read_parquet('./datasets/users.parquet')
 
     unregistered_usernames = users_df[users_df['fid'].isin(
         unregistered_fids)]['username'].tolist()
@@ -201,7 +201,7 @@ async def update_unregistered_users():
                 searchcaster_user_data_df.set_index('fid'))
 
         updated_users_extra_df.reset_index(inplace=True)
-        updated_users_extra_df.to_parquet('user_extra.parquet')
+        updated_users_extra_df.to_parquet('./datasets/user_extra.parquet')
 
 
 async def main():
@@ -223,10 +223,11 @@ async def main():
         location_list = list(
             {location.id: location for location in location_list}.values())
 
-        pl.DataFrame(user_data_list).write_parquet('users.parquet')
+        pl.DataFrame(user_data_list).write_parquet('./datasets/users.parquet')
         pl.DataFrame(user_extra_data_list).write_parquet(
-            'user_extra.parquet')
-        pl.DataFrame(location_list).write_parquet('locations.parquet')
+            './datasets/user_extra.parquet')
+        pl.DataFrame(location_list).write_parquet(
+            './datasets/locations.parquet')
 
 
 if __name__ == '__main__':

@@ -12,6 +12,7 @@ from dataclasses import dataclass
 import duckdb
 import datetime
 from typing import List
+import glob
 
 
 load_dotenv()
@@ -122,14 +123,15 @@ def dump_casts_to_parquet_file(casts: List[CastDataClass], append: bool = True):
 
 
 def main():
-    filename = 'casts.parquet'
+    file_pattern = './datasets/casts*.parquet'
+    existing_files = glob.glob(file_pattern)
 
-    if not os.path.exists(filename):
+    if not existing_files:
         casts = get_all_casts_from_warpcast(warpcast_hub_key, 0)
-        dump_casts_to_parquet_file(casts, filename)
+        dump_casts_to_parquet_file(casts, './datasets/casts.parquet')
     else:
         latest_timestamp = duckdb.query(
-            f"SELECT timestamp FROM read_parquet('casts*.parquet') ORDER BY timestamp DESC").fetchone()[0]
+            f"SELECT timestamp FROM read_parquet('{file_pattern}') ORDER BY timestamp DESC").fetchone()[0]
         timestamp = latest_timestamp if latest_timestamp else 0
         casts = get_all_casts_from_warpcast(warpcast_hub_key, timestamp)
         dump_casts_to_parquet_file(
@@ -138,7 +140,7 @@ def main():
 
 def get_monthly_filename(timestamp: int) -> str:
     dt = pd.to_datetime(timestamp, unit='ms')
-    return f"casts_{dt.year:04d}_{dt.month:02d}.parquet"
+    return f"./datasets/casts_{dt.year:04d}_{dt.month:02d}.parquet"
 
 
 def split_existing_parquet_to_monthly_files(existing_filename: str):

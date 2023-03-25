@@ -36,4 +36,6 @@ ensdata_fids.csv
 *.db
 *.parquet
 
+/datasets
+*.tar.gz
 alembic.ini

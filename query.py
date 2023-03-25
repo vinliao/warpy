@@ -111,7 +111,6 @@ if args.query:
     )
 
     reply = completion['choices'][0]['message']['content'].strip()
-    print(reply)
     reply = update_parquet_file_paths(reply)
 
     print(f"SQL from ChatGPT: \n\n{reply}\n")

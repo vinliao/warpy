@@ -21,8 +21,8 @@ args = parser.parse_args()
 
 
 def update_parquet_file_paths(query):
-    # Find all occurrences of ".parquet" in the query
-    parquet_pattern = r'\b\w+\.parquet\b'
+    # Find all occurrences of ".parquet" and "*.parquet" in the query
+    parquet_pattern = r'\b\w+\*?\.parquet\b'
     parquet_matches = re.finditer(parquet_pattern, query)
 
     # Replace each occurrence of "filename.parquet" with "read_parquet('datasets/filename.parquet')"
@@ -31,7 +31,14 @@ def update_parquet_file_paths(query):
         start_index = match.start() + offset
         end_index = match.end() + offset
         file_path = query[start_index:end_index]
-        updated_file_path = f"read_parquet('datasets/{file_path}')"
+
+        # Check if read_parquet is already present
+        read_parquet_start = query.rfind('read_parquet(', 0, start_index)
+        if read_parquet_start == -1 or query.find(')', read_parquet_start, start_index) != -1:
+            updated_file_path = f"read_parquet('datasets/{file_path}')"
+        else:
+            updated_file_path = f"datasets/{file_path}"
+
         query = query[:start_index] + updated_file_path + query[end_index:]
         offset += len(updated_file_path) - len(file_path)
 

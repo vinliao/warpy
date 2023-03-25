@@ -208,8 +208,7 @@ async def main():
     if '--extra' in sys.argv:
         await update_unregistered_users()
     else:
-        warpcast_users = get_users_from_warpcast(
-            warpcast_hub_key, None, 100)['users']
+        warpcast_users = get_all_users_from_warpcast(warpcast_hub_key)
 
         warpcast_user_data = [extract_warpcast_user_data(
             user) for user in warpcast_users]
@@ -218,7 +217,11 @@ async def main():
         user_data_list = [data[0] for data in warpcast_user_data]
         user_extra_data_list = [data[1] for data in warpcast_user_data]
         location_list = [data[2]
-                         for data in warpcast_user_data if data[2] is not None]
+                         for data in warpcast_user_data if data[2]]
+
+        # filter dupliate and remove None for locations
+        location_list = list(
+            {location.id: location for location in location_list}.values())
 
         pl.DataFrame(user_data_list).write_parquet('users.parquet')
         pl.DataFrame(user_extra_data_list).write_parquet(

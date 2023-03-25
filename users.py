@@ -135,11 +135,9 @@ async def get_single_user_from_searchcaster(username):
                     else:
                         raise ValueError(
                             f"No results found for username {username}")
-            except aiohttp.ClientResponseError as e:
-                if e.status == 504:
-                    print(f"Timeout occurred for {username}. Retrying...")
-                else:
-                    raise
+            except (aiohttp.ClientResponseError, asyncio.TimeoutError) as e:
+                print(f"Error occurred for {username}: {e}. Retrying...")
+                await asyncio.sleep(5)  # Wait for 5 seconds before retrying
 
 
 async def get_users_from_searchcaster(usernames):
@@ -185,9 +183,12 @@ async def update_unregistered_users():
 
     if len(unregistered_usernames) > 0:
         batch_size = 50
-        updated_users_extra_df = users_extra_df.set_index('fid')
 
         for i in range(0, len(unregistered_usernames), batch_size):
+            # Read the dataframe from the parquet file
+            users_extra_df = pd.read_parquet('./datasets/user_extra.parquet')
+            updated_users_extra_df = users_extra_df.set_index('fid')
+
             batch_usernames = unregistered_usernames[i:i + batch_size]
             searchcaster_users = await get_users_from_searchcaster(batch_usernames)
             searchcaster_user_data = [extract_searchcaster_user_data(
@@ -200,8 +201,9 @@ async def update_unregistered_users():
             updated_users_extra_df.update(
                 searchcaster_user_data_df.set_index('fid'))
 
-        updated_users_extra_df.reset_index(inplace=True)
-        updated_users_extra_df.to_parquet('./datasets/user_extra.parquet')
+            # Reset the index and write the updated dataframe to the parquet file
+            updated_users_extra_df.reset_index(inplace=True)
+            updated_users_extra_df.to_parquet('./datasets/user_extra.parquet')
 
 
 async def main():

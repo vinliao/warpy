@@ -1,11 +1,12 @@
+import os
 import requests
 import tarfile
 from tqdm import tqdm
 
 url = "https://pub-3916d8c82abb435eb70175747fdc2119.r2.dev/datasets.tar.gz"
 filename = "datasets.tar.gz"
-dirname = "datasets"
 
+# Check if the file already exists
 # Download the file
 response = requests.get(url, stream=True)
 total_size = int(response.headers.get("content-length", 0))
@@ -19,9 +20,4 @@ progress_bar.close()
 
 # Extract the contents of the file
 with tarfile.open(filename, "r:gz") as tar:
-    progress_bar = tqdm(tar.getmembers(), total=len(tar.getmembers()))
-    for member in progress_bar:
-        tar.extract(member, path=dirname)
-        progress_bar.set_description(f"Extracting {member.name}")
-    progress_bar.close()
-
+    tar.extractall(path='./')

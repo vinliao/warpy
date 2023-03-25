@@ -18,6 +18,23 @@ parser.add_argument('--test',
 
 args = parser.parse_args()
 
+
+def update_parquet_file_paths(query):
+    # Find all occurrences of ".parquet" in the query
+    parquet_indices = [i for i in range(
+        len(query)) if query.startswith('.parquet', i)]
+
+    # Add "read_parquet" and "datasets/" prefix to each parquet file path
+    for index in parquet_indices:
+        start_index = query.rfind(' ', 0, index) + 1
+        end_index = index + len('.parquet')
+        file_path = query[start_index:end_index]
+        if not file_path.startswith('read_parquet'):
+            updated_file_path = f"read_parquet('datasets/{file_path}')"
+            query = query[:start_index] + updated_file_path + query[end_index:]
+    return query
+
+
 if args.query:
     # set openai api key
     openai.api_key = os.getenv('OPENAI_API_KEY')
@@ -84,6 +101,7 @@ if args.query:
     )
 
     reply = completion['choices'][0]['message']['content'].strip()
+    reply = update_parquet_file_paths(reply)
 
     print(f"SQL from ChatGPT: \n\n{reply}\n")
     print(duckdb.query(reply).pl())

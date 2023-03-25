@@ -39,3 +39,7 @@ ensdata_fids.csv
 /datasets
 *.tar.gz
 alembic.ini
+
+# Ignore all .ipynb files except example.ipynb
+*.ipynb
+!example.ipynb

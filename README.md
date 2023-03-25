@@ -2,7 +2,13 @@
 
 [Farcaster](https://github.com/farcasterxyz/protocol) is an Ethereum-based programmable social network. Warpy provides open-source Farcaster datasets.
 
-To download the datasets, run `python download.py`. If you prefer, `curl https://pub-3916d8c82abb435eb70175747fdc2119.r2.dev/datasets.tar.gz` and `tar -xvf datasets.tar.gz`.
+Steps to use:
+1. `pip install -r requirements.txt`
+2. `python download.py` (or `curl https://pub-3916d8c82abb435eb70175747fdc2119.r2.dev/datasets.tar.gz` and `tar -xvf datasets.tar.gz`)
+3. Go to `example.ipynb` for examples
+4. To enable English-to-SQL (with `query.py`), you need to insert your OpenAI API key in `.env`
+
+To see what you can do with the datasets, see [example.ipynb](example.ipynb).
 
 Here are the schemas for the datasets:
 

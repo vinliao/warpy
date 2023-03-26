@@ -11,8 +11,7 @@ from typing import List, Optional
 import sys
 
 from sqlalchemy import create_engine, Column, Integer, String, ForeignKey, Boolean
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship, sessionmaker
+from sqlalchemy.orm import relationship, sessionmaker, declarative_base
 
 Base = declarative_base()
 
@@ -24,22 +23,14 @@ class User(Base):
     display_name = Column(String)
     pfp_url = Column(String)
     bio_text = Column(String)
-
-    user_extra = relationship("UserExtra", back_populates="user")
-
-
-class UserExtra(Base):
-    __tablename__ = 'user_extra'
-    fid = Column(Integer, ForeignKey('users.fid'), primary_key=True)
     following_count = Column(Integer)
     follower_count = Column(Integer)
-    location_id = Column(String, ForeignKey('locations.id'), nullable=True)
     verified = Column(Boolean)
     farcaster_address = Column(String)
     external_address = Column(String, nullable=True)
     registered_at = Column(Integer)
+    location_id = Column(String, ForeignKey('locations.id'), nullable=True)
 
-    user = relationship("User", back_populates="user_extra")
     location = relationship("Location", back_populates="user_extras")
 
 
@@ -48,7 +39,7 @@ class Location(Base):
     id = Column(String, primary_key=True)
     description = Column(String)
 
-    user_extras = relationship("UserExtra", back_populates="location")
+    user_extras = relationship("User", back_populates="location")
 
 
 load_dotenv()
@@ -62,33 +53,6 @@ class UserEnsDataClass
     ens: str
     # other info...
 """
-
-
-@dataclass(frozen=True)
-class UserExtraDataClass:
-    fid: int
-    following_count: int
-    follower_count: int
-    location_id: Optional[str] = None
-    verified: bool = False
-    farcaster_address: Optional[str] = None
-    external_address: Optional[str] = None
-    registered_at: int = -1
-
-
-@dataclass(frozen=True)
-class LocationDataClass:
-    id: str
-    description: str
-
-
-@dataclass(frozen=True)
-class UserDataClass:
-    fid: int
-    username: str
-    display_name: str
-    pfp_url: str
-    bio_text: str
 
 
 # ============================================================
@@ -134,8 +98,12 @@ def extract_warpcast_user_data(user):
         description=location_data.get('description', '')
     )
 
-    user_extra_data = UserExtra(
+    user_data = User(
         fid=user['fid'],
+        username=user['username'],
+        display_name=user['displayName'],
+        pfp_url=user['pfp']['url'] if 'pfp' in user else '',
+        bio_text=user.get('profile', {}).get('bio', {}).get('text', ''),
         following_count=user.get('followingCount', 0),
         follower_count=user.get('followerCount', 0),
         location_id=location.id,
@@ -144,15 +112,7 @@ def extract_warpcast_user_data(user):
         registered_at=-1  # Update this value as needed
     )
 
-    user_data = User(
-        fid=user['fid'],
-        username=user['username'],
-        display_name=user['displayName'],
-        pfp_url=user['pfp']['url'] if 'pfp' in user else '',
-        bio_text=user.get('profile', {}).get('bio', {}).get('text', '')
-    )
-
-    return user_data, user_extra_data, location if location.id else None
+    return user_data, location if location.id else None
 
 
 async def get_single_user_from_searchcaster(username):
@@ -200,7 +160,7 @@ async def update_unregistered_users(engine):
     with sessionmaker(bind=engine)() as session:
         # Read data from the user_extra table and filter rows where registered_at is -1
         users_extra_df = pd.read_sql(
-            session.query(UserExtra).statement, session.bind)
+            session.query(User).statement, session.bind)
         unregistered_users = users_extra_df[users_extra_df['registered_at'] == -1]
 
         # Get fids from unregistered_users, then get the usernames from the users table
@@ -216,7 +176,7 @@ async def update_unregistered_users(engine):
             for i in range(0, len(unregistered_usernames), batch_size):
                 # Read the dataframe from the user_extra table
                 users_extra_df = pd.read_sql(
-                    session.query(UserExtra).statement, session.bind)
+                    session.query(User).statement, session.bind)
                 updated_users_extra_df = users_extra_df.set_index('fid')
 
                 batch_usernames = unregistered_usernames[i:i + batch_size]
@@ -238,7 +198,7 @@ async def update_unregistered_users(engine):
                 # Save updated user_extra data to the database
                 with sessionmaker(bind=engine)() as session:
                     for idx, row in updated_users_extra_df.iterrows():
-                        user_extra = session.query(UserExtra).get(row['fid'])
+                        user_extra = session.query(User).get(row['fid'])
                         user_extra.following_count = row['following_count']
                         user_extra.follower_count = row['follower_count']
                         user_extra.location_id = row['location_id']
@@ -248,6 +208,7 @@ async def update_unregistered_users(engine):
                         user_extra.registered_at = row['registered_at']
 
                     session.commit()
+
 
 
 def create_tables():
@@ -276,9 +237,8 @@ async def main():
 
         # Extract the user_data, user_extra_data, and location lists
         user_data_list = [data[0] for data in warpcast_user_data]
-        user_extra_data_list = [data[1] for data in warpcast_user_data]
-        location_list = [data[2]
-                         for data in warpcast_user_data if data[2]]
+        location_list = [data[1]
+                         for data in warpcast_user_data if data[1]]
 
         # # filter dupliate and remove None for locations
         location_list = list(
@@ -288,7 +248,7 @@ async def main():
 
         engine = create_engine('sqlite:///datasets/datasets.db')
         save_data_to_db(engine, zip(
-            user_data_list, user_extra_data_list, location_list))
+            user_data_list, location_list))
 
 
 if __name__ == '__main__':

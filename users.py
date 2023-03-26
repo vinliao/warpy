@@ -210,16 +210,19 @@ async def update_unregistered_users(engine):
                     session.commit()
 
 
-
 def create_tables():
     engine = create_engine('sqlite:///datasets/datasets.db')
     Base.metadata.create_all(engine)
 
 
-def save_data_to_db(engine, all_data):
+def save_bulk_data(engine, user_list, location_list):
     with sessionmaker(bind=engine)() as session:
-        for data_list in all_data:
-            session.bulk_save_objects(data_list)
+        for location in location_list:
+            session.merge(location)
+        session.commit()
+
+        for user in user_list:
+            session.merge(user)
         session.commit()
 
 
@@ -228,15 +231,13 @@ async def main():
         engine = create_engine('sqlite:///datasets/datasets.db')
         await update_unregistered_users(engine)
     else:
-        # warpcast_users = get_all_users_from_warpcast(warpcast_hub_key)
-        warpcast_users = get_users_from_warpcast(
-            warpcast_hub_key, None, 50)['users']
+        warpcast_users = get_all_users_from_warpcast(warpcast_hub_key)
 
         warpcast_user_data = [extract_warpcast_user_data(
             user) for user in warpcast_users]
 
         # Extract the user_data, user_extra_data, and location lists
-        user_data_list = [data[0] for data in warpcast_user_data]
+        user_list = [data[0] for data in warpcast_user_data]
         location_list = [data[1]
                          for data in warpcast_user_data if data[1]]
 
@@ -247,8 +248,8 @@ async def main():
         create_tables()
 
         engine = create_engine('sqlite:///datasets/datasets.db')
-        save_data_to_db(engine, zip(
-            user_data_list, location_list))
+
+        save_bulk_data(engine, user_list, location_list)
 
 
 if __name__ == '__main__':

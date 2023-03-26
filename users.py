@@ -157,57 +157,38 @@ def extract_searchcaster_user_data(data):
 
 
 async def update_unregistered_users(engine):
-    with sessionmaker(bind=engine)() as session:
-        # Read data from the user_extra table and filter rows where registered_at is -1
-        users_extra_df = pd.read_sql(
-            session.query(User).statement, session.bind)
-        unregistered_users = users_extra_df[users_extra_df['registered_at'] == -1]
+    session = sessionmaker(bind=engine)()
 
-        # Get fids from unregistered_users, then get the usernames from the users table
-        unregistered_fids = unregistered_users['fid'].tolist()
-        users_df = pd.read_sql(session.query(User).statement, session.bind)
+    # Read data from the user table and filter rows where registered_at is -1
+    unregistered_users = session.query(
+        User).filter(User.registered_at == -1).all()
 
-        unregistered_usernames = users_df[users_df['fid'].isin(
-            unregistered_fids)]['username'].tolist()
+    # Get usernames from unregistered_users
+    unregistered_usernames = [user.username for user in unregistered_users]
 
-        if len(unregistered_usernames) > 0:
-            batch_size = 50
+    if unregistered_usernames:
+        batch_size = 50
 
-            for i in range(0, len(unregistered_usernames), batch_size):
-                # Read the dataframe from the user_extra table
-                users_extra_df = pd.read_sql(
-                    session.query(User).statement, session.bind)
-                updated_users_extra_df = users_extra_df.set_index('fid')
+        for i in range(0, len(unregistered_usernames), batch_size):
+            batch_usernames = unregistered_usernames[i:i + batch_size]
+            searchcaster_users = await get_users_from_searchcaster(batch_usernames)
+            searchcaster_user_data = [extract_searchcaster_user_data(
+                user) for user in searchcaster_users]
 
-                batch_usernames = unregistered_usernames[i:i + batch_size]
-                searchcaster_users = await get_users_from_searchcaster(batch_usernames)
-                searchcaster_user_data = [extract_searchcaster_user_data(
-                    user) for user in searchcaster_users]
+            # Bulk update User table with searchcaster_user_data
+            update_data = []
+            for user_data in searchcaster_user_data:
+                update_data.append({
+                    'fid': user_data['fid'],
+                    'farcaster_address': user_data['farcaster_address'],
+                    'external_address': user_data['external_address'],
+                    'registered_at': user_data['registered_at'],
+                })
 
-                # Create a Pandas DataFrame from the searchcaster user data
-                searchcaster_user_data_df = pd.DataFrame(
-                    searchcaster_user_data)
+            session.bulk_update_mappings(User, update_data)
+            session.commit()
 
-                # Update updated_users_extra_df with data from searchcaster_user_data_df
-                updated_users_extra_df.update(
-                    searchcaster_user_data_df.set_index('fid'))
-
-                # Reset the index and update the user_extra table
-                updated_users_extra_df.reset_index(inplace=True)
-
-                # Save updated user_extra data to the database
-                with sessionmaker(bind=engine)() as session:
-                    for idx, row in updated_users_extra_df.iterrows():
-                        user_extra = session.query(User).get(row['fid'])
-                        user_extra.following_count = row['following_count']
-                        user_extra.follower_count = row['follower_count']
-                        user_extra.location_id = row['location_id']
-                        user_extra.verified = row['verified']
-                        user_extra.farcaster_address = row['farcaster_address']
-                        user_extra.external_address = row['external_address']
-                        user_extra.registered_at = row['registered_at']
-
-                    session.commit()
+    session.close()
 
 
 def create_tables():

@@ -5,11 +5,51 @@ from models import Location
 import time
 import asyncio
 import aiohttp
-from dataclasses import dataclass, asdict, field
+from dataclasses import dataclass
 import pandas as pd
 from typing import List, Optional
-import polars as pl
 import sys
+
+from sqlalchemy import create_engine, Column, Integer, String, ForeignKey, Boolean
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import relationship, sessionmaker
+
+Base = declarative_base()
+
+
+class User(Base):
+    __tablename__ = 'users'
+    fid = Column(Integer, primary_key=True)
+    username = Column(String)
+    display_name = Column(String)
+    pfp_url = Column(String)
+    bio_text = Column(String)
+
+    user_extra = relationship("UserExtra", back_populates="user")
+
+
+class UserExtra(Base):
+    __tablename__ = 'user_extra'
+    fid = Column(Integer, ForeignKey('users.fid'), primary_key=True)
+    following_count = Column(Integer)
+    follower_count = Column(Integer)
+    location_id = Column(String, ForeignKey('locations.id'), nullable=True)
+    verified = Column(Boolean)
+    farcaster_address = Column(String)
+    external_address = Column(String, nullable=True)
+    registered_at = Column(Integer)
+
+    user = relationship("User", back_populates="user_extra")
+    location = relationship("Location", back_populates="user_extras")
+
+
+class Location(Base):
+    __tablename__ = 'locations'
+    id = Column(String, primary_key=True)
+    description = Column(String)
+
+    user_extras = relationship("UserExtra", back_populates="location")
+
 
 load_dotenv()
 warpcast_hub_key = os.getenv("WARPCAST_HUB_KEY")
@@ -89,12 +129,12 @@ def get_all_users_from_warpcast(key: str, cursor: str = None):
 
 def extract_warpcast_user_data(user):
     location_data = user.get('profile', {}).get('location', {})
-    location = LocationDataClass(
+    location = Location(
         id=location_data.get('placeId', ''),
         description=location_data.get('description', '')
     )
 
-    user_extra_data = UserExtraDataClass(
+    user_extra_data = UserExtra(
         fid=user['fid'],
         following_count=user.get('followingCount', 0),
         follower_count=user.get('followerCount', 0),
@@ -104,7 +144,7 @@ def extract_warpcast_user_data(user):
         registered_at=-1  # Update this value as needed
     )
 
-    user_data = UserDataClass(
+    user_data = User(
         fid=user['fid'],
         username=user['username'],
         display_name=user['displayName'],
@@ -156,61 +196,80 @@ def extract_searchcaster_user_data(data):
     }
 
 
-def merge_user_data(warpcast_data: List[dict], searchcaster_data: List[dict]) -> List[UserDataClass]:
-    merged_data = []
+async def update_unregistered_users(engine):
+    with sessionmaker(bind=engine)() as session:
+        # Read data from the user_extra table and filter rows where registered_at is -1
+        users_extra_df = pd.read_sql(
+            session.query(UserExtra).statement, session.bind)
+        unregistered_users = users_extra_df[users_extra_df['registered_at'] == -1]
 
-    for warpcast_user in warpcast_data:
-        searchcaster_user = next((user for user in searchcaster_data if user.get(
-            'fid') == warpcast_user.get('fid')), {})
+        # Get fids from unregistered_users, then get the usernames from the users table
+        unregistered_fids = unregistered_users['fid'].tolist()
+        users_df = pd.read_sql(session.query(User).statement, session.bind)
 
-        user_data_dict = {**warpcast_user, **searchcaster_user}
-        merged_data.append(UserDataClass(**user_data_dict))
+        unregistered_usernames = users_df[users_df['fid'].isin(
+            unregistered_fids)]['username'].tolist()
 
-    return merged_data
+        if len(unregistered_usernames) > 0:
+            batch_size = 50
+
+            for i in range(0, len(unregistered_usernames), batch_size):
+                # Read the dataframe from the user_extra table
+                users_extra_df = pd.read_sql(
+                    session.query(UserExtra).statement, session.bind)
+                updated_users_extra_df = users_extra_df.set_index('fid')
+
+                batch_usernames = unregistered_usernames[i:i + batch_size]
+                searchcaster_users = await get_users_from_searchcaster(batch_usernames)
+                searchcaster_user_data = [extract_searchcaster_user_data(
+                    user) for user in searchcaster_users]
+
+                # Create a Pandas DataFrame from the searchcaster user data
+                searchcaster_user_data_df = pd.DataFrame(
+                    searchcaster_user_data)
+
+                # Update updated_users_extra_df with data from searchcaster_user_data_df
+                updated_users_extra_df.update(
+                    searchcaster_user_data_df.set_index('fid'))
+
+                # Reset the index and update the user_extra table
+                updated_users_extra_df.reset_index(inplace=True)
+
+                # Save updated user_extra data to the database
+                with sessionmaker(bind=engine)() as session:
+                    for idx, row in updated_users_extra_df.iterrows():
+                        user_extra = session.query(UserExtra).get(row['fid'])
+                        user_extra.following_count = row['following_count']
+                        user_extra.follower_count = row['follower_count']
+                        user_extra.location_id = row['location_id']
+                        user_extra.verified = row['verified']
+                        user_extra.farcaster_address = row['farcaster_address']
+                        user_extra.external_address = row['external_address']
+                        user_extra.registered_at = row['registered_at']
+
+                    session.commit()
 
 
-async def update_unregistered_users():
-    # Read data from user_extra.parquet and filter rows where registered_at is -1
-    users_extra_df = pd.read_parquet('./datasets/user_extra.parquet')
-    unregistered_users = users_extra_df[users_extra_df['registered_at'] == -1]
+def create_tables():
+    engine = create_engine('sqlite:///datasets/datasets.db')
+    Base.metadata.create_all(engine)
 
-    # get fids from unregistered_users, then get the usernames from users.parquet
-    unregistered_fids = unregistered_users['fid'].tolist()
-    users_df = pd.read_parquet('./datasets/users.parquet')
 
-    unregistered_usernames = users_df[users_df['fid'].isin(
-        unregistered_fids)]['username'].tolist()
-
-    if len(unregistered_usernames) > 0:
-        batch_size = 50
-
-        for i in range(0, len(unregistered_usernames), batch_size):
-            # Read the dataframe from the parquet file
-            users_extra_df = pd.read_parquet('./datasets/user_extra.parquet')
-            updated_users_extra_df = users_extra_df.set_index('fid')
-
-            batch_usernames = unregistered_usernames[i:i + batch_size]
-            searchcaster_users = await get_users_from_searchcaster(batch_usernames)
-            searchcaster_user_data = [extract_searchcaster_user_data(
-                user) for user in searchcaster_users]
-
-            # Create a Pandas DataFrame from the searchcaster user data
-            searchcaster_user_data_df = pd.DataFrame(searchcaster_user_data)
-
-            # Update updated_users_extra_df with data from searchcaster_user_data_df
-            updated_users_extra_df.update(
-                searchcaster_user_data_df.set_index('fid'))
-
-            # Reset the index and write the updated dataframe to the parquet file
-            updated_users_extra_df.reset_index(inplace=True)
-            updated_users_extra_df.to_parquet('./datasets/user_extra.parquet')
+def save_data_to_db(engine, all_data):
+    with sessionmaker(bind=engine)() as session:
+        for data_list in all_data:
+            session.bulk_save_objects(data_list)
+        session.commit()
 
 
 async def main():
     if '--extra' in sys.argv:
-        await update_unregistered_users()
+        engine = create_engine('sqlite:///datasets/datasets.db')
+        await update_unregistered_users(engine)
     else:
-        warpcast_users = get_all_users_from_warpcast(warpcast_hub_key)
+        # warpcast_users = get_all_users_from_warpcast(warpcast_hub_key)
+        warpcast_users = get_users_from_warpcast(
+            warpcast_hub_key, None, 50)['users']
 
         warpcast_user_data = [extract_warpcast_user_data(
             user) for user in warpcast_users]
@@ -221,15 +280,15 @@ async def main():
         location_list = [data[2]
                          for data in warpcast_user_data if data[2]]
 
-        # filter dupliate and remove None for locations
+        # # filter dupliate and remove None for locations
         location_list = list(
             {location.id: location for location in location_list}.values())
 
-        pl.DataFrame(user_data_list).write_parquet('./datasets/users.parquet')
-        pl.DataFrame(user_extra_data_list).write_parquet(
-            './datasets/user_extra.parquet')
-        pl.DataFrame(location_list).write_parquet(
-            './datasets/locations.parquet')
+        create_tables()
+
+        engine = create_engine('sqlite:///datasets/datasets.db')
+        save_data_to_db(engine, zip(
+            user_data_list, user_extra_data_list, location_list))
 
 
 if __name__ == '__main__':

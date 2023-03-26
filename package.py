@@ -30,7 +30,7 @@ for table in tables:
 conn.close()
 
 # Create a tar.gz archive of the Parquet files
-with tarfile.open('parquet_files.tar.gz', 'w:gz') as tar:
+with tarfile.open('datasets.tar.gz', 'w:gz') as tar:
     for root, dirs, files in os.walk(tmpdir):
         for file in files:
             path = os.path.join(root, file)

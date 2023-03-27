@@ -1,3 +1,6 @@
+from datetime import datetime
+from sqlalchemy.orm import declarative_base
+from sqlalchemy import Column, Integer, String, ForeignKey
 from dotenv import load_dotenv
 import os
 import requests
@@ -6,27 +9,31 @@ from requests.exceptions import RequestException, JSONDecodeError
 from dataclasses import dataclass
 import requests
 import time
-import polars as pl
 import pandas as pd
 from dataclasses import dataclass
 import duckdb
 import datetime
 from typing import List
 import glob
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
 
 load_dotenv()
 warpcast_hub_key = os.getenv("WARPCAST_HUB_KEY")
 
+Base = declarative_base()
 
-@dataclass(frozen=True)
-class CastDataClass:
-    hash: str
-    thread_hash: str
-    text: str
-    timestamp: int
-    author_fid: int
-    parent_hash: str = None
+
+class Cast(Base):
+    __tablename__ = 'casts'
+
+    hash = Column(String, primary_key=True)
+    thread_hash = Column(String, nullable=False)
+    text = Column(String, nullable=False)
+    timestamp = Column(Integer, nullable=False)
+    author_fid = Column(Integer, nullable=False)
+    parent_hash = Column(String, ForeignKey('casts.hash'), nullable=True)
 
 
 # ============================================================
@@ -55,115 +62,72 @@ def get_casts_from_warpcast(key: str, cursor: str = None):
         return {"casts": [], "cursor": cursor}
 
 
-def get_all_casts_from_warpcast(key: str, timestamp: int):
+def get_casts_until_timestamp(key: str, timestamp: int):
     cursor = None
     cast_arr = []
+
     while True:
         data = get_casts_from_warpcast(key, cursor)
-
         casts = [extract_warpcast_cast_data(cast) for cast in data['casts']]
 
-        time_diff = datetime.timedelta(
-            milliseconds=casts[0]['timestamp'] - timestamp)
-
+        next_timestamp = casts[0].timestamp
+        time_diff = datetime.timedelta(milliseconds=next_timestamp - timestamp)
         time_diff_str = str(time_diff).split('.')[0]
 
-        print(
-            f"Processing casts with timestamp >= {timestamp}. Next cast timestamp: {casts[0]['timestamp']} ({time_diff_str} left)")
+        print(f"Processing casts with timestamp >= {timestamp}. "
+              f"Next cast timestamp: {next_timestamp} ({time_diff_str} left)")
 
-        if casts[0]['timestamp'] < timestamp:
+        if next_timestamp < timestamp:
             break
 
         cast_arr.extend(casts)
-
         cursor = data.get("cursor")
 
         if cursor is None:
             break
         else:
             time.sleep(1)  # add a delay to avoid hitting rate limit
-            continue
 
     return cast_arr
 
 
 def extract_warpcast_cast_data(cast):
-    return {
-        "hash": cast['hash'],
-        "thread_hash": cast['threadHash'],
-        "parent_hash": cast.get('parentHash', None),
-        "text": cast['text'],
-        "timestamp": cast['timestamp'],
-        "author_fid": cast['author']['fid']
-    }
+    return Cast(
+        hash=cast['hash'],
+        thread_hash=cast['threadHash'],
+        text=cast['text'],
+        timestamp=cast['timestamp'],
+        author_fid=cast['author']['fid'],
+        parent_hash=cast.get('parentHash', None)
+    )
 
 
-def dump_casts_to_parquet_file(casts: List[CastDataClass], append: bool = True):
-    casts = [CastDataClass(**cast) for cast in casts]
-    new_df = pd.DataFrame(casts)
-    new_df['year'] = pd.to_datetime(new_df['timestamp'], unit='ms').dt.year
-    new_df['month'] = pd.to_datetime(new_df['timestamp'], unit='ms').dt.month
+def dump_casts_to_sqlite(engine, casts: List[dict], timestamp: int):
+    with sessionmaker(bind=engine)() as session:
+        three_days_before_latest_timestamp = timestamp - \
+            datetime.timedelta(days=3).total_seconds() * 1000
+        existing_hashes = {cast.hash for cast in session.query(Cast.hash).filter(
+            Cast.timestamp >= timestamp - three_days_before_latest_timestamp).all()}
 
-    for (year, month), group in new_df.groupby(['year', 'month']):
-        filename = get_monthly_filename(group.timestamp.min())
+        new_casts = [cast
+                     for cast in casts if cast.hash not in existing_hashes]
 
-        if os.path.exists(filename) and append:
-            existing_df = pd.read_parquet(filename)
-
-            # Removing duplicates by merging on a unique identifier, such as 'hash'
-            # Assuming 'hash' is a unique identifier for each cast
-            merged_df = pd.concat([existing_df, group],
-                                  axis=0).drop_duplicates(subset=['hash'])
-
-            merged_df.to_parquet(filename, index=False)
-        else:
-            # Saving only unique casts from the new data, in case the parquet file doesn't exist yet
-            group.drop_duplicates(subset=['hash']).to_parquet(
-                filename, index=False)
+        # Bulk insert new casts
+        if new_casts:
+            session.bulk_save_objects(new_casts)
+            session.commit()
 
 
 def main():
-    file_pattern = './datasets/casts*.parquet'
-    existing_files = glob.glob(file_pattern)
+    engine = create_engine('sqlite:///datasets/datasets.db')
 
-    if not existing_files:
-        casts = get_all_casts_from_warpcast(warpcast_hub_key, 0)
-        dump_casts_to_parquet_file(casts, './datasets/casts.parquet')
-    else:
-        latest_timestamp = duckdb.query(
-            f"SELECT timestamp FROM read_parquet('{file_pattern}') ORDER BY timestamp DESC").fetchone()[0]
-        timestamp = latest_timestamp if latest_timestamp else 0
-        casts = get_all_casts_from_warpcast(warpcast_hub_key, timestamp)
-        dump_casts_to_parquet_file(
-            casts, append=bool(latest_timestamp))
+    with sessionmaker(bind=engine)() as session:
+        latest_cast = session.query(Cast).order_by(
+            Cast.timestamp.desc()).first()
+        latest_timestamp = latest_cast.timestamp if latest_cast else 0
 
-
-def get_monthly_filename(timestamp: int) -> str:
-    dt = pd.to_datetime(timestamp, unit='ms')
-    return f"./datasets/casts_{dt.year:04d}_{dt.month:02d}.parquet"
-
-
-def split_existing_parquet_to_monthly_files(existing_filename: str):
-    if not os.path.exists(existing_filename):
-        print(f"{existing_filename} does not exist!")
-        return
-
-    existing_df = pd.read_parquet(existing_filename)
-    existing_df['year'] = pd.to_datetime(
-        existing_df['timestamp'], unit='ms').dt.year
-    existing_df['month'] = pd.to_datetime(
-        existing_df['timestamp'], unit='ms').dt.month
-
-    for (year, month), group in existing_df.groupby(['year', 'month']):
-        filename = get_monthly_filename(group.timestamp.min())
-        print(
-            f"Processing group for year={year}, month={month}, filename={filename}")
-
-        if os.path.exists(filename):
-            print(f"{filename} already exists. Skipping.")
-        else:
-            print(f"Saving to {filename}")
-            group.to_parquet(filename, index=False)
+        casts = get_casts_until_timestamp(warpcast_hub_key, latest_timestamp)
+        dump_casts_to_sqlite(engine, casts, latest_timestamp)
 
 
 if __name__ == '__main__':

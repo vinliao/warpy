@@ -17,23 +17,11 @@ from typing import List
 import glob
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from models import Cast
 
 
 load_dotenv()
 warpcast_hub_key = os.getenv("WARPCAST_HUB_KEY")
-
-Base = declarative_base()
-
-
-class Cast(Base):
-    __tablename__ = 'casts'
-
-    hash = Column(String, primary_key=True)
-    thread_hash = Column(String, nullable=False)
-    text = Column(String, nullable=False)
-    timestamp = Column(Integer, nullable=False)
-    author_fid = Column(Integer, nullable=False)
-    parent_hash = Column(String, ForeignKey('casts.hash'), nullable=True)
 
 
 # ============================================================

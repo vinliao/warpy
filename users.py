@@ -2,46 +2,13 @@ from sqlalchemy.orm import aliased
 from dotenv import load_dotenv
 import os
 import requests
-from models import Location
 import time
 import asyncio
 import aiohttp
-from dataclasses import dataclass
-import pandas as pd
-from typing import List, Optional
 import sys
-
-from sqlalchemy import create_engine, Column, Integer, String, ForeignKey, Boolean
-from sqlalchemy.orm import relationship, sessionmaker, declarative_base
-
-Base = declarative_base()
-
-
-class User(Base):
-    __tablename__ = 'users'
-    fid = Column(Integer, primary_key=True)
-    username = Column(String)
-    display_name = Column(String)
-    pfp_url = Column(String)
-    bio_text = Column(String)
-    following_count = Column(Integer)
-    follower_count = Column(Integer)
-    verified = Column(Boolean)
-    farcaster_address = Column(String)
-    external_address = Column(String, nullable=True)
-    registered_at = Column(Integer)
-    location_id = Column(String, ForeignKey('locations.id'), nullable=True)
-
-    location = relationship("Location", back_populates="user_extras")
-
-
-class Location(Base):
-    __tablename__ = 'locations'
-    id = Column(String, primary_key=True)
-    description = Column(String)
-
-    user_extras = relationship("User", back_populates="location")
-
+from models import User, Location, Base
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
 load_dotenv()
 warpcast_hub_key = os.getenv("WARPCAST_HUB_KEY")

@@ -12,4 +12,4 @@ Steps to use:
 
 To see what you can do with the datasets, see [example.ipynb](example.ipynb). To see the data schema, see [models.py](models.py).
 
-Latest cast timestamp: 1679898454000; highest fid: 11290; 
+Dataset latest cast timestamp: 1679898454000; dataset highest fid: 11290; 

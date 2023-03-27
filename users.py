@@ -1,3 +1,4 @@
+from sqlalchemy.orm import aliased
 from dotenv import load_dotenv
 import os
 import requests
@@ -203,7 +204,22 @@ def save_bulk_data(engine, user_list, location_list):
         session.commit()
 
         for user in user_list:
-            session.merge(user)
+            # Create an aliased version of the User model to prevent field overwrites
+            user_aliased = aliased(user.__class__)
+
+            # Retrieve existing user from the database, if any
+            existing_user = session.query(user_aliased).filter_by(
+                fid=user.fid).one_or_none()
+
+            if existing_user:
+                # Update the existing user while preserving the specified fields
+                for attr, value in user.__dict__.items():
+                    if attr not in ['farcaster_address', 'registered_at', 'external_address', '_sa_instance_state']:
+                        setattr(existing_user, attr, value)
+            else:
+                # If user is not in the database, add it
+                session.add(user)
+
         session.commit()
 
 

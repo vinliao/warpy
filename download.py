@@ -20,25 +20,17 @@ with open(filename, "wb") as f:
         f.write(data)
 progress_bar.close()
 
-# Extract the contents of the file
-with tarfile.open(filename, "r:gz") as tar:
-    tar.extractall(path='./')
-
-
 # Extract the tar.gz archive containing the Parquet files
 archive_path = 'datasets.tar.gz'
-extracted_dir = 'extracted_parquet_files'
+extracted_dir = './datasets'
 if not os.path.exists(extracted_dir):
     os.mkdir(extracted_dir)
 
 with tarfile.open(archive_path, 'r:gz') as tar:
     tar.extractall(path=extracted_dir)
 
-# Create the SQLite database
-db_path = 'datasets.db'
-if os.path.exists(db_path):
-    os.remove(db_path)
-
+# Create the SQLite database inside the same directory
+db_path = os.path.join(extracted_dir, 'datasets.db')
 conn = sqlite3.connect(db_path)
 
 # Iterate over the extracted Parquet files and write them to the SQLite database
@@ -56,11 +48,3 @@ for root, dirs, files in os.walk(extracted_dir):
 
 # Close the connection to the SQLite database
 conn.close()
-
-# Remove the extracted Parquet files and the directory
-for root, dirs, files in os.walk(extracted_dir, topdown=False):
-    for file in files:
-        os.remove(os.path.join(root, file))
-    for dir in dirs:
-        os.rmdir(os.path.join(root, dir))
-os.rmdir(extracted_dir)

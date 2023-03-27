@@ -1,4 +1,4 @@
-from sqlalchemy import Column, BigInteger, String, Boolean, Float, Integer, ForeignKey
+from sqlalchemy import Column, String, Integer, ForeignKey
 from sqlalchemy.orm import relationship, declarative_base
 
 Base = declarative_base()
@@ -13,7 +13,7 @@ class User(Base):
     bio_text = Column(String)
     following_count = Column(Integer)
     follower_count = Column(Integer)
-    verified = Column(Boolean)
+    verified = Column(Integer)
     farcaster_address = Column(String)
     external_address = Column(String, nullable=True)
     registered_at = Column(Integer)

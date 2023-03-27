@@ -75,7 +75,8 @@ def extract_warpcast_user_data(user):
         following_count=user.get('followingCount', 0),
         follower_count=user.get('followerCount', 0),
         location_id=location.id,
-        verified=user['pfp']['verified'] if 'pfp' in user else False,
+        verified=int(user['pfp']['verified']
+                     ) if 'pfp' in user and 'verified' in user['pfp'] else 0,
         farcaster_address=None,  # Update this value as needed
         registered_at=-1  # Update this value as needed
     )

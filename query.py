@@ -3,19 +3,15 @@ from langchain.schema import (
     HumanMessage,
     SystemMessage
 )
-from langchain.prompts.chat import (
-    ChatPromptTemplate,
-    SystemMessagePromptTemplate,
-    AIMessagePromptTemplate,
-    HumanMessagePromptTemplate,
-)
-from langchain import PromptTemplate, LLMChain
 from users import *
 from casts import *
 import os
 import argparse
 import duckdb
 from langchain.chat_models import ChatOpenAI
+from langchain.agents import create_sql_agent
+from langchain.agents.agent_toolkits import SQLDatabaseToolkit
+from langchain.sql_database import SQLDatabase
 
 parser = argparse.ArgumentParser()
 
@@ -24,6 +20,8 @@ parser.add_argument('query', nargs='?',
 parser.add_argument('--raw',
                     help='Query Farcaster data with SQL.')
 parser.add_argument('--test',
+                    help='For testing purposes.')
+parser.add_argument('--advanced', nargs='?',
                     help='For testing purposes.')
 
 args = parser.parse_args()
@@ -65,6 +63,23 @@ if args.query:
 
     with duckdb.connect('datasets/datasets.db') as con:
         print(con.sql(sql_query.content).pl())
+
+
+if args.advanced:
+    db = SQLDatabase.from_uri("sqlite:///datasets/datasets.db")
+    toolkit = SQLDatabaseToolkit(db=db)
+
+    chat = ChatOpenAI(
+        temperature=0, openai_api_key=os.getenv("OPENAI_API_KEY"))
+
+    agent_executor = create_sql_agent(
+        llm=chat,
+        toolkit=toolkit,
+        verbose=True,
+    )
+
+    prompt = f"Describe relevant tables, then {args.advanced}"
+    agent_executor.run(prompt)
 
 
 if args.raw:

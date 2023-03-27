@@ -1,20 +1,13 @@
 from datetime import datetime
-from sqlalchemy.orm import declarative_base
-from sqlalchemy import Column, Integer, String, ForeignKey
 from dotenv import load_dotenv
 import os
 import requests
 import time
 from requests.exceptions import RequestException, JSONDecodeError
-from dataclasses import dataclass
 import requests
 import time
-import pandas as pd
-from dataclasses import dataclass
-import duckdb
 import datetime
 from typing import List
-import glob
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from models import Cast

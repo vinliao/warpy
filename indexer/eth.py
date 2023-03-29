@@ -167,12 +167,17 @@ def process_users_in_batches(session, users, batch_size=10):
         print(f"Processed batch of {len(users_batch)} users")
 
 
-engine = create_engine(os.getenv('PLANETSCALE_URL'))
-with sessionmaker(bind=engine)() as session:
-    # get all users with external address
-    users = session.query(User).filter(User.external_address != None).all()
-    # shuffle users
-    users = random.sample(users, len(users))
+def main():
+    engine = create_engine(os.getenv('PLANETSCALE_URL'))
+    with sessionmaker(bind=engine)() as session:
+        # get all users with external address
+        users = session.query(User).filter(User.external_address != None).all()
+        # shuffle users
+        users = random.sample(users, len(users))
 
-    process_users_in_batches(session, users, batch_size=3)
-    print(f"Done inserting transactions")
+        process_users_in_batches(session, users, batch_size=3)
+        print(f"Done inserting transactions")
+
+
+if __name__ == "__main__":
+    main()

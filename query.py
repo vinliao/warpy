@@ -3,8 +3,6 @@ from langchain.schema import (
     HumanMessage,
     SystemMessage
 )
-from users import *
-from casts import *
 import os
 import argparse
 import duckdb

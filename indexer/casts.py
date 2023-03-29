@@ -100,7 +100,12 @@ def dump_casts_to_sqlite(engine, casts: List[dict], timestamp: int):
 
 
 def main():
-    engine = create_engine('sqlite:///datasets/datasets.db')
+    # create the file path relative to the parent directory
+    parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    db_path = os.path.join(parent_dir, 'datasets', 'datasets.db')
+    engine = create_engine('sqlite:///' + db_path)
+
+    print(engine)
 
     with sessionmaker(bind=engine)() as session:
         latest_cast = session.query(Cast).order_by(

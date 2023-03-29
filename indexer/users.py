@@ -5,22 +5,12 @@ import requests
 import time
 import asyncio
 import aiohttp
-import sys
 from models import User, Location, Base
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 load_dotenv()
 warpcast_hub_key = os.getenv("WARPCAST_HUB_KEY")
-
-
-"""
-@dataclass(frozen=True)
-class UserEnsDataClass
-    address: str
-    ens: str
-    # other info...
-"""
 
 
 # ============================================================
@@ -160,8 +150,7 @@ async def update_unregistered_users(engine):
     session.close()
 
 
-def create_tables():
-    engine = create_engine('sqlite:///datasets/datasets.db')
+def create_tables(engine):
     Base.metadata.create_all(engine)
 
 
@@ -192,29 +181,27 @@ def save_bulk_data(engine, user_list, location_list):
 
 
 async def main():
-    if '--extra' in sys.argv:
-        engine = create_engine('sqlite:///datasets/datasets.db')
-        await update_unregistered_users(engine)
-    else:
-        warpcast_users = get_all_users_from_warpcast(warpcast_hub_key)
+    warpcast_users = get_all_users_from_warpcast(warpcast_hub_key)
 
-        warpcast_user_data = [extract_warpcast_user_data(
-            user) for user in warpcast_users]
+    warpcast_user_data = [extract_warpcast_user_data(
+        user) for user in warpcast_users]
 
-        # Extract the user_data, user_extra_data, and location lists
-        user_list = [data[0] for data in warpcast_user_data]
-        location_list = [data[1]
-                         for data in warpcast_user_data if data[1]]
+    # Extract the user_data, user_extra_data, and location lists
+    user_list = [data[0] for data in warpcast_user_data]
+    location_list = [data[1]
+                     for data in warpcast_user_data if data[1]]
 
-        # # filter dupliate and remove None for locations
-        location_list = list(
-            {location.id: location for location in location_list}.values())
+    # # filter dupliate and remove None for locations
+    location_list = list(
+        {location.id: location for location in location_list}.values())
 
-        create_tables()
+    parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    db_path = os.path.join(parent_dir, 'datasets', 'datasets.db')
+    engine = create_engine('sqlite:///' + db_path)
 
-        engine = create_engine('sqlite:///datasets/datasets.db')
-
-        save_bulk_data(engine, user_list, location_list)
+    create_tables(engine)
+    save_bulk_data(engine, user_list, location_list)
+    await update_unregistered_users(engine)
 
 
 if __name__ == '__main__':

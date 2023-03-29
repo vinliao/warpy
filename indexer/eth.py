@@ -1,9 +1,8 @@
-import json
 import os
 from dotenv import load_dotenv
 import requests
 from sqlalchemy.orm import sessionmaker
-from models import Base, User, EthTransaction
+from models import Base, User, EthTransaction, ERC1155Metadata
 from sqlalchemy import create_engine, text
 from datetime import datetime
 import random
@@ -94,12 +93,15 @@ def get_users_from_addresses(session, addresses):
     return session.query(User).filter(User.external_address.in_(addresses)).all()
 
 
+def get_existing_hashes(session):
+    return set(tx.hash for tx in session.query(EthTransaction.hash).all())
+
+
 def insert_transactions_to_db(session, all_transactions):
     txs = []
     metadata_objs = []
 
-    existing_hashes = set(
-        tx.hash for tx in session.query(EthTransaction).all())
+    existing_hashes = get_existing_hashes(session)
 
     users_from_addresses = get_users_from_addresses(
         session, [tx['from'] for tx in all_transactions] + [tx['to'] for tx in all_transactions])
@@ -119,29 +121,18 @@ def insert_transactions_to_db(session, all_transactions):
                     transaction, user_to.fid, user_to.external_address)
 
             if eth_transaction_dict['hash'] not in existing_hashes:
-                txs.append(eth_transaction_dict)
+                txs.append(EthTransaction(**eth_transaction_dict))
                 existing_hashes.add(eth_transaction_dict['hash'])
 
             if erc1155_metadata_dicts:
                 for erc1155_metadata_dict in erc1155_metadata_dicts:
-                    metadata_objs.append(erc1155_metadata_dict)
+                    metadata_objs.append(
+                        ERC1155Metadata(**erc1155_metadata_dict))
 
     print(f"inserting {len(txs)} txs and {len(metadata_objs)} metadata")
 
-    # Bulk insert transactions while ignoring duplicates
-    eth_transaction_insert_query = text("""
-    INSERT IGNORE INTO eth_transactions (hash, address_fid, address_external, timestamp, block_num, from_address, to_address, value, erc721_token_id, token_id, asset, category)
-    VALUES (:hash, :address_fid, :address_external, :timestamp, :block_num, :from_address, :to_address, :value, :erc721_token_id, :token_id, :asset, :category)
-    """)
-    session.execute(eth_transaction_insert_query, txs)
-
-    # Bulk insert metadata while ignoring duplicates
-    erc1155_metadata_insert_query = text("""
-    INSERT IGNORE INTO erc1155_metadata (eth_transaction_hash, token_id, value)
-    VALUES (:eth_transaction_hash, :token_id, :value)
-    """)
-    session.execute(erc1155_metadata_insert_query, metadata_objs)
-
+    session.add_all(txs)
+    session.add_all(metadata_objs)
     session.commit()
 
 
@@ -168,12 +159,13 @@ def process_users_in_batches(session, users, batch_size=10):
 
 
 def main():
-    engine = create_engine(os.getenv('PLANETSCALE_URL'))
+    parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    db_path = os.path.join(parent_dir, 'datasets', 'datasets.db')
+    engine = create_engine('sqlite:///' + db_path)
+
     with sessionmaker(bind=engine)() as session:
         # get all users with external address
         users = session.query(User).filter(User.external_address != None).all()
-        # shuffle users
-        users = random.sample(users, len(users))
 
         process_users_in_batches(session, users, batch_size=3)
         print(f"Done inserting transactions")

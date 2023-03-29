@@ -30,15 +30,11 @@ build/
 # Jupyter Notebook
 .ipynb_checkpoints/
 
-prompt.txt
-
-ensdata_fids.csv
 *.db
 *.parquet
 
 /datasets
 *.tar.gz
-alembic.ini
 
 # Ignore all .ipynb files except example.ipynb
 *.ipynb

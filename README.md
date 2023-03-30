@@ -12,4 +12,4 @@ Steps to use:
 
 To see what you can do with the datasets, see [example.ipynb](example.ipynb). To see the data schema, see [models.py](models.py).
 
-Dataset latest cast timestamp: 1679898454000; dataset highest fid: 11290;
+Dataset latest cast timestamp: 1680169689000; dataset highest fid: 11423; dataset highest block number: 16938534; tar.gz shasum: `bc351cb1792612acc6847aecee299e0535f94c4f8e62a1a93b5a0b2f9dabeee8`.

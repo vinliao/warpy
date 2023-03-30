@@ -3,9 +3,8 @@ from dotenv import load_dotenv
 import requests
 from sqlalchemy.orm import sessionmaker
 from models import Base, User, EthTransaction, ERC1155Metadata
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, func
 from datetime import datetime
-import random
 
 load_dotenv()
 
@@ -97,6 +96,13 @@ def get_existing_hashes(session):
     return set(tx.hash for tx in session.query(EthTransaction.hash).all())
 
 
+def metadata_exists(metadata_objs, token_id, eth_transaction_hash):
+    for metadata in metadata_objs:
+        if metadata.token_id == token_id and metadata.eth_transaction_hash == eth_transaction_hash:
+            return True
+    return False
+
+
 def insert_transactions_to_db(session, all_transactions):
     txs = []
     metadata_objs = []
@@ -126,8 +132,9 @@ def insert_transactions_to_db(session, all_transactions):
 
             if erc1155_metadata_dicts:
                 for erc1155_metadata_dict in erc1155_metadata_dicts:
-                    metadata_objs.append(
-                        ERC1155Metadata(**erc1155_metadata_dict))
+                    if not metadata_exists(metadata_objs, erc1155_metadata_dict['token_id'], erc1155_metadata_dict['eth_transaction_hash']):
+                        metadata_objs.append(
+                            ERC1155Metadata(**erc1155_metadata_dict))
 
     print(f"inserting {len(txs)} txs and {len(metadata_objs)} metadata")
 
@@ -164,10 +171,22 @@ def main():
     engine = create_engine('sqlite:///' + db_path)
 
     with sessionmaker(bind=engine)() as session:
-        # get all users with external address
-        users = session.query(User).filter(User.external_address != None).all()
+        users = session.query(User).filter(
+            User.fid.notin_(session.query(EthTransaction.address_fid))
+        ).filter(User.external_address.isnot(None)).order_by(func.random()).all()
+        print(f"Found {len(users)} users with external addresses to process")
 
-        process_users_in_batches(session, users, batch_size=3)
+        if len(users) == 0:
+            # TODO: check if total user with external address is equal to unique address in eth transactions
+            # this means it has indexed every user, this means now it can
+            # start refreshing the data, for each user, get the latest block
+            # then use that as a params in fetching the transactions
+            pass
+
+        # not include @4156 because they have too much transactions...
+        users = [user for user in users if user.fid != 166]
+
+        process_users_in_batches(session, users, batch_size=25)
         print(f"Done inserting transactions")
 
 

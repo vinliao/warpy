@@ -44,7 +44,7 @@ if args.query:
     initial_prompt_raw = """
     Your job is to turn user queries (in natural language) to SQL. Only return the SQL and nothing else. Don't explain, don't say "here's your query." Just give the SQL. Say "Yes." if you understand.
 
-    My database is in SQLite adjust accordingly. Here are the schema:
+    Timestamp is in unix millisecond format, database is in SQLite, adjust accordingly. Here are the schema:
     """
 
     system_prompt = SystemMessage(

@@ -189,6 +189,10 @@ def main():
         ).filter(User.external_address.isnot(None)).order_by(func.random()).all()
         print(f"Found {len(users)} users with external addresses to process")
 
+        # TODO: handle users that don't have ethereum transactions
+
+        # TODO: handle cases where all the addresses have been indexed
+        # and it's only about refreshing the data
         if len(users) == 0:
             pass
 

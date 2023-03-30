@@ -19,6 +19,10 @@ latest_timestamp = cursor.fetchone()[0]
 cursor.execute("SELECT MAX(author_fid) FROM casts")
 highest_fid = cursor.fetchone()[0]
 
+# Get the highest block number from the Ethereum transactions
+cursor.execute("SELECT MAX(block_num) FROM eth_transactions")
+highest_block_num = cursor.fetchone()[0]
+
 # Create a temporary directory to store the Parquet files
 tmpdir = 'temp_parquet_files'
 if not os.path.exists(tmpdir):
@@ -56,8 +60,5 @@ for root, dirs, files in os.walk(tmpdir, topdown=False):
         os.rmdir(os.path.join(root, dir))
 os.rmdir(tmpdir)
 
-# Print the results
 print(
-    f"Latest cast timestamp: {latest_timestamp}")
-print(f"Highest fid: {highest_fid}")
-print(f"Hash of tar.gz: {hash}")
+    f"Dataset latest cast timestamp: {latest_timestamp}; dataset highest fid: {highest_fid}; dataset highest block number: {highest_block_num}; tar.gz shasum: {hash}")

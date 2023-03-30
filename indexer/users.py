@@ -67,7 +67,7 @@ def extract_warpcast_user_data(user):
         location_id=location.id,
         verified=int(user['pfp']['verified']
                      ) if 'pfp' in user and 'verified' in user['pfp'] else 0,
-        farcaster_address=None,  # Update this value as needed
+        farcaster_address="",  # Update this value as needed
         registered_at=-1  # Update this value as needed
     )
 
@@ -137,17 +137,28 @@ async def update_unregistered_users(engine):
             # Bulk update User table with searchcaster_user_data
             update_data = []
             for user_data in searchcaster_user_data:
-                update_data.append({
-                    'fid': user_data['fid'],
-                    'farcaster_address': user_data['farcaster_address'],
-                    'external_address': user_data['external_address'],
-                    'registered_at': user_data['registered_at'],
-                })
+                # if farcaster address is not None
+                # if farcaster address is not None and registered_at is not 0
+                if user_data['farcaster_address'] is not None and user_data['registered_at'] != 0:
+                    update_data.append({
+                        'fid': user_data['fid'],
+                        'farcaster_address': user_data['farcaster_address'],
+                        'external_address': user_data['external_address'],
+                        'registered_at': user_data['registered_at'],
+                    })
 
             session.bulk_update_mappings(User, update_data)
             session.commit()
 
     session.close()
+
+
+def delete_unregistered_users(engine):
+    # delete users where registered_at is -1
+    # -1 means the user didn't register properly, need better way to handle this
+    with sessionmaker(bind=engine)() as session:
+        session.query(User).filter(User.registered_at == -1).delete()
+        session.commit()
 
 
 def create_tables(engine):
@@ -202,6 +213,7 @@ async def main():
     create_tables(engine)
     save_bulk_data(engine, user_list, location_list)
     await update_unregistered_users(engine)
+    delete_unregistered_users(engine)
 
 
 if __name__ == '__main__':

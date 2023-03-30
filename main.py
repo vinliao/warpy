@@ -40,7 +40,7 @@ elif args.cast:
     cast_indexer_main()
 elif args.eth:
     # refresh eth data
-    eth_indexer_main()
+    asyncio.run(eth_indexer_main())
 else:
     # no arguments specified, show the help message
     parser.print_help()

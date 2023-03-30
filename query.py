@@ -11,6 +11,7 @@ from langchain.agents import create_sql_agent
 from langchain.agents.agent_toolkits import SQLDatabaseToolkit
 from langchain.sql_database import SQLDatabase
 from dotenv import load_dotenv
+import time
 
 load_dotenv()
 
@@ -20,8 +21,8 @@ parser.add_argument('query', nargs='?',
                     help='Query Farcaster data with natural language.')
 parser.add_argument('--raw',
                     help='Query Farcaster data with SQL.')
-parser.add_argument('--test',
-                    help='For testing purposes.')
+parser.add_argument('--csv', nargs='?', const=int(time.time()), default=None, type=str,
+                    help='Dump the query result to csv. If not specified, default to {unix_timestamp_in_second}.csv')
 parser.add_argument('--advanced', nargs='?',
                     help='For testing purposes.')
 
@@ -63,7 +64,11 @@ if args.query:
     print(f"SQL from ChatGPT: \n\n{sql_query.content}\n")
 
     with duckdb.connect('datasets/datasets.db') as con:
-        print(con.sql(sql_query.content).pl())
+        df = con.sql(sql_query.content).pl()
+        print(df)
+
+        if args.csv:
+            df.write_csv(f'{args.csv}.csv')
 
 
 if args.advanced:
@@ -85,4 +90,8 @@ if args.advanced:
 
 if args.raw:
     with duckdb.connect('datasets/datasets.db') as con:
-        print(con.sql(args.raw).pl())
+        df = con.sql(args.raw).pl()
+        print(df)
+
+        if args.csv:
+            df.write_csv(f'{args.csv}.csv')

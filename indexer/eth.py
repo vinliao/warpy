@@ -10,7 +10,8 @@ from datetime import datetime
 load_dotenv()
 
 
-async def get_transactions_from_alchemy(address, page_key=None):
+async def get_transactions_from_alchemy(address: str, from_block: int, page_key: str = None):
+    print(from_block)
     url = f"https://eth-mainnet.g.alchemy.com/v2/{os.getenv('ALCHEMY_API_KEY')}"
     payload = {
         "id": 1,
@@ -25,6 +26,7 @@ async def get_transactions_from_alchemy(address, page_key=None):
                 "withMetadata": True,
                 "excludeZeroValue": True,
                 "maxCount": "0x3e8",
+                "fromBlock": f"0x{from_block:x}"
             }
         ]
     }
@@ -57,11 +59,17 @@ async def get_transactions_from_alchemy(address, page_key=None):
                 await asyncio.sleep(5)  # Wait for 5 seconds before retrying
 
 
-async def get_all_transactions(address):
+async def get_all_transactions(session, address: str):
     transactions = []
     page_key = None
+
+    latest_block_of_user = session.query(func.max(EthTransaction.block_num)).filter(
+        EthTransaction.address_external == address).scalar()
+    if latest_block_of_user is None:
+        latest_block_of_user = 0
+
     while True:
-        data = await get_transactions_from_alchemy(address, page_key)
+        data = await get_transactions_from_alchemy(address, latest_block_of_user, page_key)
         transactions += data['transactions']
         page_key = data['page_key']
         if page_key is None:
@@ -72,7 +80,7 @@ async def get_all_transactions(address):
 async def process_user_batch(session, users_batch):
     user_addresses = {user.external_address: user.fid for user in users_batch}
 
-    tasks = [get_all_transactions(address)
+    tasks = [get_all_transactions(session, address)
              for address in user_addresses.keys()]
     all_transactions = await asyncio.gather(*tasks)
     all_transactions = [
@@ -185,9 +193,11 @@ def main():
 
     with sessionmaker(bind=engine)() as session:
         users = session.query(User).filter(
-            User.fid.notin_(session.query(EthTransaction.address_fid))
-        ).filter(User.external_address.isnot(None)).order_by(func.random()).all()
-        print(f"Found {len(users)} users with external addresses to process")
+            User.external_address.isnot(None)).order_by(func.random()).all()
+
+        # to refresh, get the eth transaction with highest block number
+        # then use that block number to get all the transactions after that
+        # only refresh when everything has been indexed
 
         # TODO: handle users that don't have ethereum transactions
 

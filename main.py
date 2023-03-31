@@ -75,6 +75,7 @@ def refresh_eth_data():
 def download():
     """Download datasets."""
     downloader_main()
+    print()
 
     if typer.confirm("(Optional) do you want to initialize the environment with OpenAI and Warpcast Hub keys?"):
         init()

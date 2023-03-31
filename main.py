@@ -19,10 +19,20 @@ indexer_app = typer.Typer()
 app.add_typer(indexer_app, name="indexer")
 
 
+def update_env_variables():
+    dotenv_path = '.env'
+    global warpcast_hub_key, openai_api_key
+    new_warpcast_hub_key = typer.prompt("Enter your Warpcast Hub key")
+    new_openai_api_key = typer.prompt("Enter your OpenAI API key")
+    set_key(dotenv_path, "WARPCAST_HUB_KEY", new_warpcast_hub_key)
+    set_key(dotenv_path, "OPENAI_API_KEY", new_openai_api_key)
+    warpcast_hub_key = new_warpcast_hub_key
+    openai_api_key = new_openai_api_key
+
+
 @app.command()
 def init():
     """Initialize the environment with OpenAI and Warpcast Hub keys."""
-    dotenv_path = '.env'
     global warpcast_hub_key, openai_api_key
 
     if warpcast_hub_key and openai_api_key:
@@ -30,19 +40,9 @@ def init():
         typer.echo(f"WARPCAST_HUB_KEY: {warpcast_hub_key}")
         typer.echo(f"OPENAI_API_KEY: {openai_api_key}")
         if typer.confirm("Do you want to overwrite the existing values?"):
-            new_warpcast_hub_key = typer.prompt("Enter your Warpcast Hub key")
-            new_openai_api_key = typer.prompt("Enter your OpenAI API key")
-            set_key(dotenv_path, "WARPCAST_HUB_KEY", new_warpcast_hub_key)
-            set_key(dotenv_path, "OPENAI_API_KEY", new_openai_api_key)
-            warpcast_hub_key = new_warpcast_hub_key
-            openai_api_key = new_openai_api_key
+            update_env_variables()
     else:
-        new_warpcast_hub_key = typer.prompt("Enter your Warpcast Hub key")
-        new_openai_api_key = typer.prompt("Enter your OpenAI API key")
-        set_key(dotenv_path, "WARPCAST_HUB_KEY", new_warpcast_hub_key)
-        set_key(dotenv_path, "OPENAI_API_KEY", new_openai_api_key)
-        warpcast_hub_key = new_warpcast_hub_key
-        openai_api_key = new_openai_api_key
+        update_env_variables()
 
 
 @indexer_app.command("all")

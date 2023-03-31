@@ -1,6 +1,6 @@
 import os
 import asyncio
-from dotenv import load_dotenv
+from dotenv import load_dotenv, set_key
 import typer
 
 from indexer.users import main as user_indexer_main
@@ -11,11 +11,38 @@ from packager.download import main as downloader_main
 
 load_dotenv()
 warpcast_hub_key = os.getenv('WARPCAST_HUB_KEY')
+openai_api_key = os.getenv('OPENAI_API_KEY')
 
 app = typer.Typer()
 
 indexer_app = typer.Typer()
 app.add_typer(indexer_app, name="indexer")
+
+
+@app.command()
+def init():
+    """Initialize the environment with OpenAI and Warpcast Hub keys."""
+    dotenv_path = '.env'
+    global warpcast_hub_key, openai_api_key
+
+    if warpcast_hub_key and openai_api_key:
+        typer.echo("Environment variables detected:")
+        typer.echo(f"WARPCAST_HUB_KEY: {warpcast_hub_key}")
+        typer.echo(f"OPENAI_API_KEY: {openai_api_key}")
+        if typer.confirm("Do you want to overwrite the existing values?"):
+            new_warpcast_hub_key = typer.prompt("Enter your Warpcast Hub key")
+            new_openai_api_key = typer.prompt("Enter your OpenAI API key")
+            set_key(dotenv_path, "WARPCAST_HUB_KEY", new_warpcast_hub_key)
+            set_key(dotenv_path, "OPENAI_API_KEY", new_openai_api_key)
+            warpcast_hub_key = new_warpcast_hub_key
+            openai_api_key = new_openai_api_key
+    else:
+        new_warpcast_hub_key = typer.prompt("Enter your Warpcast Hub key")
+        new_openai_api_key = typer.prompt("Enter your OpenAI API key")
+        set_key(dotenv_path, "WARPCAST_HUB_KEY", new_warpcast_hub_key)
+        set_key(dotenv_path, "OPENAI_API_KEY", new_openai_api_key)
+        warpcast_hub_key = new_warpcast_hub_key
+        openai_api_key = new_openai_api_key
 
 
 @indexer_app.command("all")
@@ -48,6 +75,9 @@ def refresh_eth_data():
 def download():
     """Download datasets."""
     downloader_main()
+
+    if typer.confirm("(Optional) do you want to initialize the environment with OpenAI and Warpcast Hub keys?"):
+        init()
 
 
 @app.command()

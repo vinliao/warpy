@@ -93,20 +93,42 @@ def package():
     packager_main()
 
 
-# TODO: --csv flag
+# # TODO: --csv flag
+# @app.command()
+# def query(query: str = typer.Argument(None, help='Query Farcaster data with natural language.'),
+#           raw: str = typer.Option(None, help='Query Farcaster data with SQL.'),
+#           advanced: str = typer.Option(None, help='Query Farcaster data with Langchain\'s SQL agent.')):
+
+#     if raw:
+#         execute_raw_sql(raw)
+#     elif query:
+#         execute_natural_language_query(query)
+#     elif advanced:
+#         execute_advanced_query(advanced)
+#     else:
+#         typer.echo("Please provide either --raw, --query, or --advanced option.")
+
+
 @app.command()
 def query(query: str = typer.Argument(None, help='Query Farcaster data with natural language.'),
           raw: str = typer.Option(None, help='Query Farcaster data with SQL.'),
-          advanced: str = typer.Option(None, help='Query Farcaster data with Langchain\'s SQL agent.')):
+          advanced: str = typer.Option(None, help='For testing purposes.'),
+          csv: bool = typer.Option(False, help='Save the result to a CSV file. Format: {unix_timestamp}.csv')):
 
     if raw:
-        execute_raw_sql(raw)
+        df = execute_raw_sql(raw)
+        print(df)
     elif query:
-        execute_natural_language_query(query)
+        df = execute_natural_language_query(query)
+        print(df)
     elif advanced:
         execute_advanced_query(advanced)
     else:
         typer.echo("Please provide either --raw, --query, or --advanced option.")
+        return
+
+    if csv is True and df is not None:
+        df.write_csv(f"{int(time.time())}.csv")
 
 
 if __name__ == "__main__":

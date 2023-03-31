@@ -39,18 +39,15 @@ def get_sqlalchemy_models():
     return remove_imports_from_models(sqlalchemy_models)
 
 
-def execute_raw_sql(query: str, csv_filename: str = None):
+def execute_raw_sql(query: str) -> pl.DataFrame:
     with sqlite3.connect('datasets/datasets.db') as con:
         cur = con.cursor()
         cur.execute(query)
-        df = pl.DataFrame(cur)
-        print(df)
-
-    if csv_filename is not None:
-        df.write_csv(f'{csv_filename}.csv')
+        column_names = [description[0] for description in cur.description]
+        return pl.DataFrame(cur, schema=column_names)
 
 
-def execute_natural_language_query(query: str, csv_filename: str = None):
+def execute_natural_language_query(query: str) -> pl.DataFrame:
     chat = ChatOpenAI(
         temperature=0, openai_api_key=os.getenv("OPENAI_API_KEY"))
 
@@ -79,11 +76,8 @@ def execute_natural_language_query(query: str, csv_filename: str = None):
     with sqlite3.connect('datasets/datasets.db') as con:
         cur = con.cursor()
         cur.execute(sql_query.content)
-        df = pl.DataFrame(cur)
-        print(df)
-
-        if csv_filename is not None:
-            df.write_csv(f'{csv_filename}.csv')
+        column_names = [description[0] for description in cur.description]
+        return pl.DataFrame(cur, schema=column_names)
 
 
 def execute_advanced_query(query: str):

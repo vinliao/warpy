@@ -1,3 +1,5 @@
+import polars as pl
+import sqlite3
 from langchain.schema import (
     AIMessage,
     HumanMessage,
@@ -5,7 +7,6 @@ from langchain.schema import (
 )
 import os
 import argparse
-import duckdb
 from langchain.chat_models import ChatOpenAI
 from langchain.agents import create_sql_agent
 from langchain.agents.agent_toolkits import SQLDatabaseToolkit
@@ -33,6 +34,16 @@ def remove_imports_from_models(model_str):
     start = model_str.index("class")
     return model_str[start:]
 
+
+if args.raw:
+    with sqlite3.connect('datasets/datasets.db') as con:
+        cur = con.cursor()
+        cur.execute(args.raw)
+        df = pl.DataFrame(cur)
+        print(df)
+
+    if args.csv:
+        df.write_csv(f'{args.csv}.csv')
 
 if args.query:
     chat = ChatOpenAI(
@@ -63,8 +74,10 @@ if args.query:
     sql_query = chat(messages)
     print(f"SQL from ChatGPT: \n\n{sql_query.content}\n")
 
-    with duckdb.connect('datasets/datasets.db') as con:
-        df = con.sql(sql_query.content).pl()
+    with sqlite3.connect('datasets/datasets.db') as con:
+        cur = con.cursor()
+        cur.execute(sql_query.content)
+        df = pl.DataFrame(cur)
         print(df)
 
         if args.csv:
@@ -86,12 +99,3 @@ if args.advanced:
 
     prompt = f"Describe relevant tables, then {args.advanced}"
     agent_executor.run(prompt)
-
-
-if args.raw:
-    with duckdb.connect('datasets/datasets.db') as con:
-        df = con.sql(args.raw).pl()
-        print(df)
-
-        if args.csv:
-            df.write_csv(f'{args.csv}.csv')

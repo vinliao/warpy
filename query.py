@@ -6,28 +6,26 @@ from langchain.schema import (
     SystemMessage
 )
 import os
-import argparse
 from langchain.chat_models import ChatOpenAI
 from langchain.agents import create_sql_agent
 from langchain.agents.agent_toolkits import SQLDatabaseToolkit
 from langchain.sql_database import SQLDatabase
 from dotenv import load_dotenv
-import time
 
 load_dotenv()
 
-parser = argparse.ArgumentParser()
+# parser = argparse.ArgumentParser()
 
-parser.add_argument('query', nargs='?',
-                    help='Query Farcaster data with natural language.')
-parser.add_argument('--raw',
-                    help='Query Farcaster data with SQL.')
-parser.add_argument('--csv', nargs='?', const=int(time.time()), default=None, type=str,
-                    help='Dump the query result to csv. If not specified, default to {unix_timestamp_in_second}.csv')
-parser.add_argument('--advanced', nargs='?',
-                    help='For testing purposes.')
+# parser.add_argument('query', nargs='?',
+#                     help='Query Farcaster data with natural language.')
+# parser.add_argument('--raw',
+#                     help='Query Farcaster data with SQL.')
+# parser.add_argument('--csv', nargs='?', const=int(time.time()), default=None, type=str,
+#                     help='Dump the query result to csv. If not specified, default to {unix_timestamp_in_second}.csv')
+# parser.add_argument('--advanced', nargs='?',
+#                     help='For testing purposes.')
 
-args = parser.parse_args()
+# args = parser.parse_args()
 
 
 def remove_imports_from_models(model_str):
@@ -41,22 +39,20 @@ def get_sqlalchemy_models():
     return remove_imports_from_models(sqlalchemy_models)
 
 
-if args.raw:
+def execute_raw_sql(query: str, csv_filename: str = None):
     with sqlite3.connect('datasets/datasets.db') as con:
         cur = con.cursor()
-        cur.execute(args.raw)
+        cur.execute(query)
         df = pl.DataFrame(cur)
         print(df)
 
-    if args.csv:
-        df.write_csv(f'{args.csv}.csv')
+    if csv_filename is not None:
+        df.write_csv(f'{csv_filename}.csv')
 
-if args.query:
+
+def execute_natural_language_query(query: str, csv_filename: str = None):
     chat = ChatOpenAI(
         temperature=0, openai_api_key=os.getenv("OPENAI_API_KEY"))
-
-    with open('models.py', 'r') as f:
-        sqlalchemy_models = f.read()
 
     initial_prompt_raw = """
     Your job is to turn user queries (in natural language) to SQL. Only return the SQL and nothing else. Don't explain, don't say "here's your query." Just give the SQL. Say "Yes." if you understand.
@@ -72,7 +68,7 @@ if args.query:
 
     ai_response = AIMessage(content="Yes.")
 
-    query_message = HumanMessage(content=args.query)
+    query_message = HumanMessage(content=query)
 
     messages = [system_prompt, initial_prompt, ai_response, query_message]
     print("Sending query to ChatGPT...\n")
@@ -86,11 +82,11 @@ if args.query:
         df = pl.DataFrame(cur)
         print(df)
 
-        if args.csv:
-            df.write_csv(f'{args.csv}.csv')
+        if csv_filename is not None:
+            df.write_csv(f'{csv_filename}.csv')
 
 
-if args.advanced:
+def execute_advanced_query(query: str):
     db = SQLDatabase.from_uri("sqlite:///datasets/datasets.db")
     toolkit = SQLDatabaseToolkit(db=db)
 
@@ -103,5 +99,5 @@ if args.advanced:
         verbose=True,
     )
 
-    prompt = f"Describe relevant tables, then {args.advanced}"
+    prompt = f"Describe relevant tables, then {query}"
     agent_executor.run(prompt)

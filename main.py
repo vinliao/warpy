@@ -2,12 +2,18 @@ import os
 import asyncio
 from dotenv import load_dotenv, set_key
 import typer
+import time
 
 from indexer.users import main as user_indexer_main
 from indexer.casts import main as cast_indexer_main
 from indexer.eth import main as eth_indexer_main
 from packager.package import main as packager_main
 from packager.download import main as downloader_main
+from query import (
+    execute_raw_sql,
+    execute_natural_language_query,
+    execute_advanced_query
+)
 
 load_dotenv()
 warpcast_hub_key = os.getenv('WARPCAST_HUB_KEY')
@@ -85,6 +91,22 @@ def download():
 def package():
     """Package and zip datasets."""
     packager_main()
+
+
+# TODO: --csv flag
+@app.command()
+def query(query: str = typer.Argument(None, help='Query Farcaster data with natural language.'),
+          raw: str = typer.Option(None, help='Query Farcaster data with SQL.'),
+          advanced: str = typer.Option(None, help='Query Farcaster data with Langchain\'s SQL agent.')):
+
+    if raw:
+        execute_raw_sql(raw)
+    elif query:
+        execute_natural_language_query(query)
+    elif advanced:
+        execute_advanced_query(advanced)
+    else:
+        typer.echo("Please provide either --raw, --query, or --advanced option.")
 
 
 if __name__ == "__main__":

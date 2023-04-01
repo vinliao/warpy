@@ -22,8 +22,6 @@ if config.config_file_name is not None:
 
 # add your model's MetaData object here
 # for 'autogenerate' support
-models_path = Path(__file__).resolve().parent.parent / 'models.py'
-sys.path.append(str(models_path.parent))
 target_metadata = models.Base.metadata
 
 

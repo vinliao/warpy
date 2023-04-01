@@ -7,6 +7,7 @@ import time
 from indexer.users import main as user_indexer_main
 from indexer.casts import main as cast_indexer_main
 from indexer.eth import main as eth_indexer_main
+from indexer.reactions import main as reaction_indexer_main
 from packager.package import main as packager_main
 from packager.download import main as downloader_main
 from query import (
@@ -85,6 +86,17 @@ def refresh_cast_data():
         return
 
     cast_indexer_main()
+
+
+@indexer_app.command("reaction")
+def refresh_reaction_data():
+    """Refresh reactions data."""
+    print('a')
+    if not warpcast_hub_key:
+        print("Error: you need to set the environment variable WARPCAST_HUB_KEY. Run `python main.py init` to do so.")
+        return
+
+    reaction_indexer_main()
 
 
 @indexer_app.command("eth")

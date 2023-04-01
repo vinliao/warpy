@@ -44,6 +44,18 @@ class Cast(Base):
     author_fid = Column(Integer, nullable=False)
     parent_hash = Column(String, ForeignKey('casts.hash'), nullable=True)
 
+    reactions = relationship("Reaction", back_populates="target")
+
+
+class Reaction(Base):
+    __tablename__ = 'reactions'
+    hash = Column(String, primary_key=True)
+    reaction_type = Column(String)  # like & recast
+    timestamp = Column(Integer)
+    target_hash = Column(String, ForeignKey('casts.hash'))
+    author_fid = Column(Integer, ForeignKey('users.fid'))
+    target = relationship('Cast', back_populates='reactions')
+
 
 class ExternalAddress(Base):
     __tablename__ = 'external_addresses'

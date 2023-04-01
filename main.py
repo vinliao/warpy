@@ -91,12 +91,11 @@ def refresh_cast_data():
 @indexer_app.command("reaction")
 def refresh_reaction_data():
     """Refresh reactions data."""
-    print('a')
     if not warpcast_hub_key:
         print("Error: you need to set the environment variable WARPCAST_HUB_KEY. Run `python main.py init` to do so.")
         return
 
-    reaction_indexer_main()
+    asyncio.run(reaction_indexer_main())
 
 
 @indexer_app.command("eth")

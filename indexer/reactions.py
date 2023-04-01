@@ -1,14 +1,11 @@
-from sqlalchemy import tuple_
-from datetime import datetime
 from dotenv import load_dotenv
 import os
-from requests.exceptions import RequestException, JSONDecodeError
-from typing import List
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from models import Cast, Reaction
 import asyncio
 import aiohttp
+from datetime import datetime, timedelta
 
 
 load_dotenv()
@@ -49,15 +46,15 @@ async def fetch_reactions(session, base_url, headers):
     return reactions
 
 
-async def get_cast_reactions_async(cast_hashes, warpcast_hub_key, n):
-    async with aiohttp.ClientSession() as session:
+async def get_cast_reactions_async(cast_hashes, warpcast_hub_key, n, session):
+    async with aiohttp.ClientSession() as aiohttp_session:
         headers = {"Authorization": f"Bearer {warpcast_hub_key}"}
         reactions = {}
         for i in range(0, len(cast_hashes), n):
             tasks = []
             for cast_hash in cast_hashes[i:i + n]:
                 url = f"https://api.warpcast.com/v2/cast-reactions?castHash={cast_hash}&limit=100"
-                tasks.append(fetch_reactions(session, url, headers))
+                tasks.append(fetch_reactions(aiohttp_session, url, headers))
 
             responses = await asyncio.gather(*tasks)
             for cast_hash, response_data in zip(cast_hashes[i:i + n], responses):
@@ -65,11 +62,20 @@ async def get_cast_reactions_async(cast_hashes, warpcast_hub_key, n):
                     reactions[cast_hash] = [extract_reactions(
                         reaction) for reaction in response_data if reaction]
 
+            # Dump to the database after fetching reactions for each batch of cast hashes
+            insert_reactions(session, reactions)
+            reactions.clear()  # Clear the reactions dictionary for the next batch
+
         return reactions
 
 
 async def get_cast_reactions(cast_hashes, bearer_token, n=10):
-    reactions = await get_cast_reactions_async(cast_hashes, bearer_token, n)
+    parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    db_path = os.path.join(parent_dir, 'datasets', 'datasets.db')
+    engine = create_engine('sqlite:///' + db_path)
+
+    with sessionmaker(engine)() as session:
+        reactions = await get_cast_reactions_async(cast_hashes, bearer_token, n, session)
     return reactions
 
 
@@ -101,6 +107,7 @@ def insert_reactions(session, reactions):
 
     # Commit the changes to the database
     session.commit()
+    print(f"Inserted {len(reactions)} reactions into the database.")
 
 
 # create the file path relative to the parent directory
@@ -110,17 +117,19 @@ async def main():
     engine = create_engine('sqlite:///' + db_path)
 
     with sessionmaker(engine)() as session:
-        casts = session.query(Cast).limit(3).all()
-        cast_hashes = ['0x6c5dea44f96bd0fdcccf0dc9b8d506115cb35734']
-        cast_hashes.extend([cast.hash for cast in casts])
+        # calculate datetime object for one month ago
+        one_month_ago = datetime.now() - timedelta(days=30)
 
-        reactions = await get_cast_reactions(cast_hashes, warpcast_hub_key, n=35)
+        # convert datetime object to unix timestamp format
+        timestamp = int(one_month_ago.strftime('%s')) * 1000
 
-        for reaction in reactions:
-            print(len(reactions[reaction]))
+        # query casts within the last month
+        casts = session.query(Cast).filter(Cast.timestamp > timestamp).all()
+        cast_hashes = [cast.hash for cast in casts]
 
-        # dump to db
-        insert_reactions(session, reactions)
+        print(f"Fetching reactions for {len(cast_hashes)} casts...")
+
+        await get_cast_reactions(cast_hashes, warpcast_hub_key, n=50)
 
 
 if __name__ == "__main__":

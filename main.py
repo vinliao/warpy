@@ -10,6 +10,8 @@ from indexer.eth import main as eth_indexer_main
 from indexer.reactions import main as reaction_indexer_main
 from packager.package import main as packager_main
 from packager.download import main as downloader_main
+from packager.upload import main as uploader_main
+
 from query import (
     execute_raw_sql,
     execute_natural_language_query,
@@ -112,6 +114,12 @@ def refresh_eth_data():
 def download():
     """Download datasets."""
     downloader_main()
+
+
+@app.command()
+def upload():
+    """Upload datasets."""
+    uploader_main()
 
 
 @app.command()

@@ -39,3 +39,6 @@ build/
 # Ignore all .ipynb files except example.ipynb
 *.ipynb
 !example.ipynb
+
+# Ignore all .py files except example.py
+.pytest_cache

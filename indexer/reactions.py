@@ -6,6 +6,8 @@ from models import Cast, Reaction
 import asyncio
 import aiohttp
 from datetime import datetime, timedelta
+import pandas as pd
+import polars as pl
 
 
 load_dotenv()
@@ -117,19 +119,13 @@ async def main():
     engine = create_engine('sqlite:///' + db_path)
 
     with sessionmaker(engine)() as session:
-        # calculate datetime object for one month ago
-        one_month_ago = datetime.now() - timedelta(days=30)
+        one_week_ago = datetime.now() - timedelta(days=7)
 
-        # convert datetime object to unix timestamp format
-        timestamp = int(one_month_ago.strftime('%s')) * 1000
+        casts = session.query(Cast).filter(
+            Cast.timestamp < one_week_ago).order_by(Cast.timestamp).all()
 
-        # query casts within the last month
-        casts = session.query(Cast).filter(Cast.timestamp > timestamp).all()
         cast_hashes = [cast.hash for cast in casts]
-
-        print(f"Fetching reactions for {len(cast_hashes)} casts...")
-
-        await get_cast_reactions(cast_hashes, warpcast_hub_key, n=50)
+        await get_cast_reactions(cast_hashes, warpcast_hub_key, n=1000)
 
 
 if __name__ == "__main__":

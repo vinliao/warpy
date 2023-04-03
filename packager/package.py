@@ -1,40 +1,44 @@
-# package.py
 import os
 import sqlite3
+import tarfile
+import hashlib
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
-import tarfile
-import hashlib
+from typing import List
 
 
-def main():
-    # Open a connection to the SQLite database
-    parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+def get_db_connection(parent_dir: str) -> sqlite3.Connection:
     db_path = os.path.join(parent_dir, 'datasets', 'datasets.db')
-    conn = sqlite3.connect(db_path)
+    return sqlite3.connect(db_path)
 
-    # Get the latest cast timestamp
-    cursor = conn.cursor()
+
+def get_latest_timestamp(cursor: sqlite3.Cursor) -> int:
     cursor.execute("SELECT MAX(timestamp) FROM casts")
-    latest_timestamp = cursor.fetchone()[0]
+    return cursor.fetchone()[0]
 
-    # Get the highest fid
+
+def get_highest_fid(cursor: sqlite3.Cursor) -> int:
     cursor.execute("SELECT MAX(author_fid) FROM casts")
-    highest_fid = cursor.fetchone()[0]
+    return cursor.fetchone()[0]
 
-    # Get the highest block number from the Ethereum transactions
+
+def get_highest_block_num(cursor: sqlite3.Cursor) -> int:
     cursor.execute("SELECT MAX(block_num) FROM eth_transactions")
-    highest_block_num = cursor.fetchone()[0]
+    return cursor.fetchone()[0]
 
-    # Create a temporary directory to store the Parquet files
-    tmpdir = 'temp_parquet_files'
+
+def create_temporary_directory(tmpdir: str) -> None:
     if not os.path.exists(tmpdir):
         os.mkdir(tmpdir)
 
-    # Convert each table to a Parquet file and save it in the temporary directory
+
+def get_all_tables(cursor: sqlite3.Cursor) -> List[str]:
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
-    tables = [x[0] for x in cursor.fetchall()]
+    return [x[0] for x in cursor.fetchall()]
+
+
+def convert_tables_to_parquet(conn: sqlite3.Connection, tables: List[str], tmpdir: str) -> None:
     for table in tables:
         df = pd.read_sql_query(f"SELECT * FROM {table}", conn)
         pq.write_table(
@@ -42,21 +46,21 @@ def main():
             where=os.path.join(tmpdir, f"{table}.parquet")
         )
 
-    # Close the connection to the SQLite database
-    conn.close()
 
-    # Create a tar.gz archive of the Parquet files
-    with tarfile.open('datasets.tar.gz', 'w:gz') as tar:
+def create_tar_gz_archive(tmpdir: str, archive_name: str) -> None:
+    with tarfile.open(archive_name, 'w:gz') as tar:
         for root, dirs, files in os.walk(tmpdir):
             for file in files:
                 path = os.path.join(root, file)
                 tar.add(path, arcname=os.path.relpath(path, tmpdir))
 
-    # Create a hash of the tar.gz archive
-    with open('datasets.tar.gz', 'rb') as f:
-        hash = hashlib.sha256(f.read()).hexdigest()
 
-    # Delete the temporary directory and its contents
+def compute_hash_of_archive(archive_name: str) -> str:
+    with open(archive_name, 'rb') as f:
+        return hashlib.sha256(f.read()).hexdigest()
+
+
+def delete_temporary_directory(tmpdir: str) -> None:
     for root, dirs, files in os.walk(tmpdir, topdown=False):
         for file in files:
             os.remove(os.path.join(root, file))
@@ -64,9 +68,29 @@ def main():
             os.rmdir(os.path.join(root, dir))
     os.rmdir(tmpdir)
 
+
+def main():
+    parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    conn = get_db_connection(parent_dir)
+
+    cursor = conn.cursor()
+
+    tmpdir = 'temp_parquet_files'
+    create_temporary_directory(tmpdir)
+
+    tables = get_all_tables(cursor)
+    convert_tables_to_parquet(conn, tables, tmpdir)
+
+    archive_name = 'datasets.tar.gz'
+    create_tar_gz_archive(tmpdir, archive_name)
+
+    delete_temporary_directory(tmpdir)
+
     print(
-        f"Dataset latest cast timestamp: {latest_timestamp}; dataset highest fid: {highest_fid}; dataset highest block number: {highest_block_num}; tar.gz shasum: {hash}")
+        f"Dataset latest cast timestamp: {get_latest_timestamp(cursor)}; dataset highest fid: {get_highest_fid(cursor)}; dataset highest block number: {get_highest_block_num(cursor)}; tar.gz shasum: {compute_hash_of_archive(archive_name)}")
+
+    conn.close()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

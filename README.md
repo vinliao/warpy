@@ -38,4 +38,4 @@ python main.py indexer cast
 python main.py query "get latest cast by dwr"
 ```
 
-Dataset latest cast timestamp: 1680169689000; dataset highest fid: 11423; dataset highest block number: 16938534; tar.gz shasum: `bc351cb1792612acc6847aecee299e0535f94c4f8e62a1a93b5a0b2f9dabeee8`.
+Dataset latest cast timestamp: 1680611427000; dataset highest fid: 11652; dataset highest block number: 16974689; tar.gz shasum: `957d812e726019ddb85af4b9f90ede7b55cdae44d2b78a530b9f0a70eb25d0e7`.

@@ -6,17 +6,12 @@ from models import Cast, Reaction
 import asyncio
 import aiohttp
 from datetime import datetime, timedelta
-import pandas as pd
-import polars as pl
+from sqlalchemy.orm import aliased
 
 
 load_dotenv()
 warpcast_hub_key = os.getenv("WARPCAST_HUB_KEY")
 
-
-# ============================================================
-# ====================== WARPCAST ============================
-# ============================================================
 
 async def fetch_reactions(session, base_url, headers):
     reactions = []
@@ -120,9 +115,16 @@ async def main():
 
     with sessionmaker(engine)() as session:
         one_week_ago = datetime.now() - timedelta(days=7)
+        one_week_ago_unix_ms = int(one_week_ago.timestamp() * 1000)
 
         casts = session.query(Cast).filter(
-            Cast.timestamp < one_week_ago).order_by(Cast.timestamp).all()
+            Cast.timestamp < one_week_ago_unix_ms,
+            ~Cast.hash.in_(
+                session.query(Reaction.target_hash).distinct()
+            )
+        ).order_by(Cast.timestamp.desc()).all()
+
+        print(f"Fetching reactions for {len(casts)} casts...")
 
         cast_hashes = [cast.hash for cast in casts]
         await get_cast_reactions(cast_hashes, warpcast_hub_key, n=1000)

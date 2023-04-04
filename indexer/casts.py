@@ -100,8 +100,6 @@ def main():
     db_path = os.path.join(parent_dir, 'datasets', 'datasets.db')
     engine = create_engine('sqlite:///' + db_path)
 
-    print(engine)
-
     with sessionmaker(bind=engine)() as session:
         latest_cast = session.query(Cast).order_by(
             Cast.timestamp.desc()).first()

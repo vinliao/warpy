@@ -14,20 +14,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# parser = argparse.ArgumentParser()
-
-# parser.add_argument('query', nargs='?',
-#                     help='Query Farcaster data with natural language.')
-# parser.add_argument('--raw',
-#                     help='Query Farcaster data with SQL.')
-# parser.add_argument('--csv', nargs='?', const=int(time.time()), default=None, type=str,
-#                     help='Dump the query result to csv. If not specified, default to {unix_timestamp_in_second}.csv')
-# parser.add_argument('--advanced', nargs='?',
-#                     help='For testing purposes.')
-
-# args = parser.parse_args()
-
-
 def remove_imports_from_models(model_str):
     start = model_str.index("class")
     return model_str[start:]

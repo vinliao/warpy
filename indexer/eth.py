@@ -11,7 +11,6 @@ load_dotenv()
 
 
 async def get_transactions_from_alchemy(address: str, from_block: int, page_key: str = None):
-    print(from_block)
     url = f"https://eth-mainnet.g.alchemy.com/v2/{os.getenv('ALCHEMY_API_KEY')}"
     payload = {
         "id": 1,
@@ -193,7 +192,7 @@ def main():
 
     with sessionmaker(bind=engine)() as session:
         users = session.query(User).filter(
-            User.external_address.isnot(None)).order_by(func.random()).all()
+            User.external_address.isnot(None)).order_by(User.fid.desc()).all()
 
         # to refresh, get the eth transaction with highest block number
         # then use that block number to get all the transactions after that

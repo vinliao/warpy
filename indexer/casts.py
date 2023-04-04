@@ -1,3 +1,4 @@
+from typing import List, Dict, Union
 from datetime import datetime
 from dotenv import load_dotenv
 import os
@@ -17,11 +18,6 @@ load_dotenv()
 warpcast_hub_key = os.getenv("WARPCAST_HUB_KEY")
 
 
-# ============================================================
-# ====================== WARPCAST ============================
-# ============================================================
-
-
 def get_casts_from_warpcast(key: str, cursor: str = None):
     try:
         url = f"https://api.warpcast.com/v2/recent-casts?cursor={cursor}&limit=1000" if cursor else "https://api.warpcast.com/v2/recent-casts?limit=1000"
@@ -29,7 +25,7 @@ def get_casts_from_warpcast(key: str, cursor: str = None):
         print(f"Fetching from {url}")
 
         result = requests.get(url, headers={"Authorization": "Bearer " + key})
-        result.raise_for_status()  # Raises a RequestException if the request failed
+        result.raise_for_status()
         json_data = result.json()
 
         return {
@@ -43,7 +39,18 @@ def get_casts_from_warpcast(key: str, cursor: str = None):
         return {"casts": [], "cursor": cursor}
 
 
-def get_casts_until_timestamp(key: str, timestamp: int):
+def extract_warpcast_cast_data(cast: Dict[str, Union[str, int]]) -> Cast:
+    return Cast(
+        hash=cast['hash'],
+        thread_hash=cast['threadHash'],
+        text=cast['text'],
+        timestamp=cast['timestamp'],
+        author_fid=cast['author']['fid'],
+        parent_hash=cast.get('parentHash', None)
+    )
+
+
+def get_casts_until_timestamp(key: str, timestamp: int) -> List[Cast]:
     cursor = None
     cast_arr = []
 
@@ -67,33 +74,21 @@ def get_casts_until_timestamp(key: str, timestamp: int):
         if cursor is None:
             break
         else:
-            time.sleep(1)  # add a delay to avoid hitting rate limit
+            time.sleep(1)
 
     return cast_arr
 
 
-def extract_warpcast_cast_data(cast):
-    return Cast(
-        hash=cast['hash'],
-        thread_hash=cast['threadHash'],
-        text=cast['text'],
-        timestamp=cast['timestamp'],
-        author_fid=cast['author']['fid'],
-        parent_hash=cast.get('parentHash', None)
-    )
-
-
-def dump_casts_to_sqlite(engine, casts: List[dict], timestamp: int):
+def dump_casts_to_sqlite(engine, casts: List[Cast], timestamp: int) -> None:
     with sessionmaker(bind=engine)() as session:
         three_days_before_latest_timestamp = timestamp - \
             datetime.timedelta(days=3).total_seconds() * 1000
         existing_hashes = {cast.hash for cast in session.query(Cast.hash).filter(
             Cast.timestamp >= timestamp - three_days_before_latest_timestamp).all()}
 
-        new_casts = [cast
-                     for cast in casts if cast.hash not in existing_hashes]
+        new_casts = [
+            cast for cast in casts if cast.hash not in existing_hashes]
 
-        # Bulk insert new casts
         if new_casts:
             session.bulk_save_objects(new_casts)
             session.commit()

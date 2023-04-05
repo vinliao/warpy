@@ -26,50 +26,81 @@ alchemy_api_key = os.getenv('ALCHEMY_API_KEY')
 app = typer.Typer()
 
 indexer_app = typer.Typer()
+env_app = typer.Typer()
 app.add_typer(indexer_app, name="indexer")
+app.add_typer(env_app, name="env")
+
+
+def update_warpcast_key():
+    dotenv_path = '.env'
+    global warpcast_hub_key
+    print(f"Current Warpcast Hub key: {warpcast_hub_key}")
+    new_warpcast_hub_key = typer.prompt("Enter your new Warpcast Hub key")
+    set_key(dotenv_path, "WARPCAST_HUB_KEY", new_warpcast_hub_key)
+    warpcast_hub_key = new_warpcast_hub_key
+
+
+def update_openai_key():
+    dotenv_path = '.env'
+    global openai_api_key
+    print(f"Current OpenAI API key: {openai_api_key}")
+    new_openai_api_key = typer.prompt("Enter your new OpenAI API key")
+    set_key(dotenv_path, "OPENAI_API_KEY", new_openai_api_key)
+    openai_api_key = new_openai_api_key
+
+
+def update_alchemy_key():
+    dotenv_path = '.env'
+    global alchemy_api_key
+    print(f"Current Alchemy key: {alchemy_api_key}")
+    new_alchemy_api_key = typer.prompt("Enter your new Alchemy API key")
+    set_key(dotenv_path, "ALCHEMY_API_KEY", new_alchemy_api_key)
+    alchemy_api_key = new_alchemy_api_key
 
 
 def update_env_variables():
-    dotenv_path = '.env'
-    global warpcast_hub_key, openai_api_key, alchemy_api_key
-
-    if typer.confirm("Do you want to update your Warpcast Hub key?"):
-        new_warpcast_hub_key = typer.prompt("Enter your new Warpcast Hub key")
-        set_key(dotenv_path, "WARPCAST_HUB_KEY", new_warpcast_hub_key)
-        warpcast_hub_key = new_warpcast_hub_key
-
-    if typer.confirm("Do you want to update your OpenAI API key?"):
-        new_openai_api_key = typer.prompt("Enter your new OpenAI API key")
-        set_key(dotenv_path, "OPENAI_API_KEY", new_openai_api_key)
-        openai_api_key = new_openai_api_key
-
-    if typer.confirm("Do you want to update your Alchemy API key?"):
-        new_alchemy_api_key = typer.prompt("Enter your new Alchemy API key")
-        set_key(dotenv_path, "ALCHEMY_API_KEY", new_alchemy_api_key)
-        alchemy_api_key = new_alchemy_api_key
+    update_warpcast_key()
+    update_openai_key()
+    update_alchemy_key()
 
 
-@app.command()
-def init():
-    """Initialize the environment with OpenAI and Warpcast Hub keys."""
-    global warpcast_hub_key, openai_api_key, alchemy_api_key
-
+@env_app.command("all")
+def init_all():
+    """Initialize the environment variables."""
     if warpcast_hub_key or openai_api_key or alchemy_api_key:
         typer.echo("Environment variables detected:")
         typer.echo(f"WARPCAST_HUB_KEY: {warpcast_hub_key}")
         typer.echo(f"OPENAI_API_KEY: {openai_api_key}")
         typer.echo(f"ALCHEMY_API_KEY: {alchemy_api_key}")
-        if typer.confirm("Do you want to update existing environment variables?"):
+        if typer.confirm("Do you want to overwrite the existing values?"):
             update_env_variables()
     else:
         update_env_variables()
+
+
+@env_app.command("warpcast")
+def init_warpcast():
+    """Initialize the Warpcast Hub key."""
+    update_warpcast_key()
+
+
+@env_app.command("openai")
+def init_openai():
+    """Initialize the OpenAI API key."""
+    update_openai_key()
+
+
+@env_app.command("alchemy")
+def init_alchemy():
+    """Initialize the Alchemy API key."""
+    update_alchemy_key()
 
 
 @indexer_app.command("all")
 def refresh_all_data():
     """Refresh all data in the DB."""
     if not warpcast_hub_key or not alchemy_api_key:
-        print("Error: you need to set the environment variables WARPCAST_HUB_KEY and ALCHEMY_API_KEY. Run `python main.py init` to do so.")
+        print("Error: you need to set the environment variables WARPCAST_HUB_KEY and ALCHEMY_API_KEY. Run `python main.py env all` to do so.")
         return
     asyncio.run(user_indexer_main())
     cast_indexer_main()
@@ -80,7 +111,7 @@ def refresh_all_data():
 def refresh_user_data():
     """Refresh user data."""
     if not warpcast_hub_key:
-        print("Error: you need to set the environment variable WARPCAST_HUB_KEY. Run `python main.py init` to do so.")
+        print("Error: you need to set the environment variable WARPCAST_HUB_KEY. Run `python main.py env warpcast` to do so.")
         return
 
     asyncio.run(user_indexer_main())
@@ -90,7 +121,7 @@ def refresh_user_data():
 def refresh_cast_data():
     """Refresh cast data."""
     if not warpcast_hub_key:
-        print("Error: you need to set the environment variable WARPCAST_HUB_KEY. Run `python main.py init` to do so.")
+        print("Error: you need to set the environment variable WARPCAST_HUB_KEY. Run `python main.py env warpcast` to do so.")
         return
 
     cast_indexer_main()
@@ -100,7 +131,7 @@ def refresh_cast_data():
 def refresh_reaction_data():
     """Refresh reactions data."""
     if not warpcast_hub_key:
-        print("Error: you need to set the environment variable WARPCAST_HUB_KEY. Run `python main.py init` to do so.")
+        print("Error: you need to set the environment variable WARPCAST_HUB_KEY. Run `python main.py env warpcast` to do so.")
         return
 
     asyncio.run(reaction_indexer_main())
@@ -110,7 +141,7 @@ def refresh_reaction_data():
 def refresh_eth_data():
     """Refresh onchain Ethereum data."""
     if not alchemy_api_key:
-        print("Error: you need to set the environment variable ALCHEMY_API_KEY. Run `python main.py init` to do so.")
+        print("Error: you need to set the environment variable ALCHEMY_API_KEY. Run `python main.py env alchemy` to do so.")
         return
 
     asyncio.run(eth_indexer_main())
@@ -140,8 +171,8 @@ def query(query: str = typer.Argument(None, help='Query Farcaster data with natu
           advanced: str = typer.Option(None, help='For testing purposes.'),
           csv: bool = typer.Option(False, help='Save the result to a CSV file. Format: {unix_timestamp}.csv')):
 
-    if not openai_api_key:
-        print("Error: you need to set the environment variable OPENAI_API_KEY. Run `python main.py init` to do so.")
+    if not openai_api_key and raw is None:
+        print("Error: you need to set the environment variable OPENAI_API_KEY. Run `python main.py env openai` to do so.")
         return
 
     if raw:

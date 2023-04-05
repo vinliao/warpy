@@ -4,7 +4,7 @@
 
 To see what you can do with the datasets, see [example.ipynb](example.ipynb). To see the data schema, see [models.py](models.py).
 
-One-command install on MacOS and Linux machines: run `make install`. Windows machines: it's recommended to use [WSL](https://docs.microsoft.com/en-us/windows/wsl/install-win10) and run `make install` there.
+One-command install on MacOS and Linux machines: run `make install`. Windows machines: it's recommended to use [WSL](https://docs.microsoft.com/en-us/windows/wsl/install-win10) and run `make install` there. If you don't want to use `make`, you can run `pip install -r requirements.txt` manually inside a virtual environment.
 
 All of `main.py` commands:
 

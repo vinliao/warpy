@@ -32,15 +32,21 @@ app.add_typer(indexer_app, name="indexer")
 def update_env_variables():
     dotenv_path = '.env'
     global warpcast_hub_key, openai_api_key, alchemy_api_key
-    new_warpcast_hub_key = typer.prompt("Enter your Warpcast Hub key")
-    new_openai_api_key = typer.prompt("Enter your OpenAI API key")
-    new_alchemy_api_key = typer.prompt("Enter your Alchemy API key")
-    set_key(dotenv_path, "WARPCAST_HUB_KEY", new_warpcast_hub_key)
-    set_key(dotenv_path, "OPENAI_API_KEY", new_openai_api_key)
-    set_key(dotenv_path, "ALCHEMY_API_KEY", new_alchemy_api_key)
-    warpcast_hub_key = new_warpcast_hub_key
-    openai_api_key = new_openai_api_key
-    alchemy_api_key = new_alchemy_api_key
+
+    if typer.confirm("Do you want to update your Warpcast Hub key?"):
+        new_warpcast_hub_key = typer.prompt("Enter your new Warpcast Hub key")
+        set_key(dotenv_path, "WARPCAST_HUB_KEY", new_warpcast_hub_key)
+        warpcast_hub_key = new_warpcast_hub_key
+
+    if typer.confirm("Do you want to update your OpenAI API key?"):
+        new_openai_api_key = typer.prompt("Enter your new OpenAI API key")
+        set_key(dotenv_path, "OPENAI_API_KEY", new_openai_api_key)
+        openai_api_key = new_openai_api_key
+
+    if typer.confirm("Do you want to update your Alchemy API key?"):
+        new_alchemy_api_key = typer.prompt("Enter your new Alchemy API key")
+        set_key(dotenv_path, "ALCHEMY_API_KEY", new_alchemy_api_key)
+        alchemy_api_key = new_alchemy_api_key
 
 
 @app.command()
@@ -53,7 +59,7 @@ def init():
         typer.echo(f"WARPCAST_HUB_KEY: {warpcast_hub_key}")
         typer.echo(f"OPENAI_API_KEY: {openai_api_key}")
         typer.echo(f"ALCHEMY_API_KEY: {alchemy_api_key}")
-        if typer.confirm("Do you want to overwrite the existing values?"):
+        if typer.confirm("Do you want to update existing environment variables?"):
             update_env_variables()
     else:
         update_env_variables()

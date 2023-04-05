@@ -6,6 +6,7 @@ import requests
 from tqdm import tqdm
 import pyarrow.parquet as pq
 from sqlalchemy import create_engine
+import shutil
 
 from models import Base
 
@@ -54,6 +55,10 @@ def main():
     parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
     extracted_dir = os.path.join(parent_dir, 'datasets')
     db_path = os.path.join(parent_dir, 'datasets', 'datasets.db')
+
+    # Remove existing 'datasets' directory if it exists
+    if os.path.exists(extracted_dir):
+        shutil.rmtree(extracted_dir)
 
     download_file(url, filename)
     extract_archive(archive_path, extracted_dir)

@@ -2,7 +2,9 @@
 
 [Farcaster](https://github.com/farcasterxyz/protocol) is an Ethereum-based programmable social network. Warpy provides open-source Farcaster datasets.
 
-One-command install: run `make install`. To see what you can do with the datasets, see [example.ipynb](example.ipynb). To see the data schema, see [models.py](models.py).
+To see what you can do with the datasets, see [example.ipynb](example.ipynb). To see the data schema, see [models.py](models.py).
+
+One-command install on MacOS and Linux machines: run `make install`. Windows machines: it's recommended to use [WSL](https://docs.microsoft.com/en-us/windows/wsl/install-win10) and run `make install` there.
 
 All of `main.py` commands:
 
@@ -14,25 +16,24 @@ Options:
 
 Commands:
   download  Download datasets.
+  env
   indexer
-  init      Initialize the environment with OpenAI and Warpcast Hub keys.
   package   Package and zip datasets.
   query
+  upload    Upload datasets.
 ```
 
 Some example commands:
 
 ```bash
-# Note: environment variables must be set before running any commands
-
-# Initialize the environment with OpenAI and Warpcast Hub keys
-python main.py init
-
 # Download the latest dataset
 python main.py download
 
 # Index the latest casts
 python main.py indexer cast
+
+# Set OpenAI environment variables
+python main.py env openai
 
 # Query the database with English
 python main.py query "get latest cast by dwr"

@@ -40,5 +40,7 @@ build/
 *.ipynb
 !example.ipynb
 
-# Ignore all .py files except example.py
 .pytest_cache
+
+# Ignore all .sql files
+*.sql

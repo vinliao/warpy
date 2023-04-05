@@ -176,8 +176,17 @@ def query(query: str = typer.Argument(None, help='Query Farcaster data with natu
         return
 
     if raw:
-        df = execute_raw_sql(raw)
-        print(df)
+        if os.path.exists(raw):
+            try:
+                with open(raw, "r") as f:
+                    raw_sql = f.read()
+                    df = execute_raw_sql(raw_sql)
+                    print(df)
+            except Exception as e:
+                typer.echo(f"Error: Could not execute SQL from file. {str(e)}")
+        else:
+            df = execute_raw_sql(raw)
+            print(df)
     elif query:
         df = execute_natural_language_query(query)
         print(df)

@@ -35,8 +35,11 @@ python main.py indexer cast
 # Set OpenAI environment variables
 python main.py env openai
 
-# Query the database with English
+# Ways to query the database
 python main.py query "get latest cast by dwr"
+python main.py query --raw "select count(*) from users"
+python main.py query --raw "yoursql.sql"
+python main.py query "get users followers is more than 5k" --csv
 ```
 
 Dataset latest cast timestamp: 1680611427000; dataset highest fid: 11652; dataset highest block number: 16974689; tar.gz shasum: `957d812e726019ddb85af4b9f90ede7b55cdae44d2b78a530b9f0a70eb25d0e7`.

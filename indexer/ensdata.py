@@ -14,9 +14,23 @@ async def get_single_user_from_ensdata(address: str):
     print(f"Fetching {address} from {url}")
 
     async with aiohttp.ClientSession() as session:
-        async with session.get(url) as response:
-            json_data = await response.json()
-            return json_data
+        while True:
+            try:
+                timeout = aiohttp.ClientTimeout(total=10)
+                async with session.get(url, timeout=timeout) as response:
+                    # Sleep between requests to avoid rate limiting
+                    await asyncio.sleep(1)
+
+                    response.raise_for_status()
+                    json_data = await response.json()
+                    if json_data:
+                        return json_data
+                    else:
+                        raise ValueError(
+                            f"No results found for address {address}")
+            except (aiohttp.ClientResponseError, asyncio.TimeoutError) as e:
+                print(f"Error occurred for {address}: {e}. Retrying...")
+                await asyncio.sleep(5)  # Wait for 5 seconds before retrying
 
 
 async def get_users_from_ensdata(addresses: List[str]):
@@ -61,12 +75,15 @@ async def main():
     engine = create_engine('sqlite:///' + db_path)
 
     with sessionmaker(bind=engine)() as session:
-        # get two random user where external address is not none
         users = session.query(User).filter(
-            User.external_address != None).limit(10).all()
+            User.external_address != None,
+            ~User.external_address.in_(
+                session.query(ExternalAddress.address)
+            )
+        ).all()
         addresses = [user.external_address for user in users]
 
-        batch_size = 2
+        batch_size = 50
         for i in range(0, len(addresses), batch_size):
             batch = addresses[i:i+batch_size]
             await process_addresses(session, batch)

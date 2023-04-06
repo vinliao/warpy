@@ -181,20 +181,20 @@ def query(query: str = typer.Argument(None, help='Query Farcaster data with natu
                 with open(raw, "r") as f:
                     raw_sql = f.read()
                     df = execute_raw_sql(raw_sql)
-                    print(df)
             except Exception as e:
                 typer.echo(f"Error: Could not execute SQL from file. {str(e)}")
         else:
             df = execute_raw_sql(raw)
-            print(df)
     elif query:
         df = execute_natural_language_query(query)
-        print(df)
     elif advanced:
         execute_advanced_query(advanced)
     else:
         typer.echo("Please provide either --raw, --query, or --advanced option.")
         return
+
+    if df is not None:
+        print(df)
 
     if csv is True and df is not None:
         df.write_csv(f"{int(time.time())}.csv")

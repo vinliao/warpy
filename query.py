@@ -1,17 +1,19 @@
-import polars as pl
-import sqlite3
-from langchain.schema import (
-    AIMessage,
-    HumanMessage,
-    SystemMessage
-)
 import os
-from langchain.chat_models import ChatOpenAI
+import re
+import sqlite3
+import polars as pl
+from dotenv import load_dotenv
 from langchain.agents import create_sql_agent
 from langchain.agents.agent_toolkits import SQLDatabaseToolkit
+from langchain.chat_models import ChatOpenAI
+from langchain.schema import AIMessage, HumanMessage, SystemMessage
 from langchain.sql_database import SQLDatabase
-from dotenv import load_dotenv
-import re
+from rich.console import Console
+from rich.panel import Panel
+from rich import box
+from typing import Optional
+
+console = Console()
 
 load_dotenv()
 
@@ -27,24 +29,32 @@ def get_sqlalchemy_models():
     return remove_imports_from_models(sqlalchemy_models)
 
 
-def execute_raw_sql(query: str) -> pl.DataFrame:
+def execute_raw_sql(query: str) -> Optional[pl.DataFrame]:
+    print()
+    console.print(
+        Panel(query, title="Running SQL", box=box.SQUARE, expand=False))
+    print()
+
     with sqlite3.connect('datasets/datasets.db') as con:
         cur = con.cursor()
         if re.search(r"(?i)\b(insert|update|delete|drop)\b", query):
             user_confirmation = input(
-                "This operation will modify or delete data. Are you sure you want to proceed? (y/N): ")
-            if user_confirmation.lower() != 'y':
+                "This operation will modify or delete data. Are you sure you want to proceed? [y/N]: ")
+
+            if user_confirmation.lower() != "y":
                 print("Operation cancelled.")
                 return
+
             cur.execute(query)
             print(f"{cur.rowcount} rows affected.")
         else:
             cur.execute(query)
             column_names = [description[0] for description in cur.description]
-            return pl.DataFrame(cur, schema=column_names)
+            df = pl.DataFrame(cur, schema=column_names)
+            return df
 
 
-def execute_natural_language_query(query: str) -> pl.DataFrame:
+def execute_natural_language_query(query: str) -> Optional[pl.DataFrame]:
     chat = ChatOpenAI(
         temperature=0, openai_api_key=os.getenv("OPENAI_API_KEY"))
 
@@ -65,12 +75,12 @@ def execute_natural_language_query(query: str) -> pl.DataFrame:
     query_message = HumanMessage(content=query)
 
     messages = [system_prompt, initial_prompt, ai_response, query_message]
-    print("Sending query to ChatGPT...\n")
+    print()
+    console.print(Panel(query, title="Your query",
+                  box=box.SQUARE, expand=False))
 
     sql_query = chat(messages)
-    print(f"SQL from ChatGPT: \n\n{sql_query.content}\n")
-
-    execute_raw_sql(sql_query.content)
+    return execute_raw_sql(sql_query.content)
 
 
 def execute_advanced_query(query: str):

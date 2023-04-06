@@ -8,6 +8,7 @@ from indexer.users import main as user_indexer_main
 from indexer.casts import main as cast_indexer_main
 from indexer.eth import main as eth_indexer_main
 from indexer.reactions import main as reaction_indexer_main
+from indexer.ensdata import main as ensdata_indexer_main
 from packager.package import main as packager_main
 from packager.download import main as downloader_main
 from packager.upload import main as uploader_main
@@ -145,6 +146,13 @@ def refresh_eth_data():
         return
 
     asyncio.run(eth_indexer_main())
+
+
+@indexer_app.command("ens")
+def refresh_ens_data():
+    """Refresh ENS data."""
+
+    asyncio.run(ensdata_indexer_main())
 
 
 @app.command()

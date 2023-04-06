@@ -14,7 +14,8 @@ async def get_single_user_from_ensdata(address: str):
     print(f"Fetching {address} from {url}")
 
     async with aiohttp.ClientSession() as session:
-        while True:
+        retries = 3
+        while retries > 0:
             try:
                 timeout = aiohttp.ClientTimeout(total=10)
                 async with session.get(url, timeout=timeout) as response:
@@ -31,13 +32,16 @@ async def get_single_user_from_ensdata(address: str):
             except (aiohttp.ClientResponseError, asyncio.TimeoutError) as e:
                 print(f"Error occurred for {address}: {e}. Retrying...")
                 await asyncio.sleep(5)  # Wait for 5 seconds before retrying
+                retries -= 1
+        print(f"Skipping address {address} after 3 retries.")
+        return None
 
 
 async def get_users_from_ensdata(addresses: List[str]):
     tasks = [asyncio.create_task(get_single_user_from_ensdata(address))
              for address in addresses]
     users = await asyncio.gather(*tasks)
-    return users
+    return list(filter(None, users))
 
 
 def extract_ensdata_user_data(data):

@@ -6,6 +6,24 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 from typing import List
+import shutil
+
+
+def hash_models_py(file_path: str) -> str:
+    with open(file_path, 'rb') as f:
+        return hashlib.sha256(f.read()).hexdigest()[:4]
+
+
+def create_or_update_warpy_metadata(cursor: sqlite3.Cursor, models_hash: str) -> None:
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS warpy_metadata (
+        id INTEGER PRIMARY KEY,
+        models_hash TEXT NOT NULL
+    );
+    """)
+    cursor.execute("DELETE FROM warpy_metadata;")
+    cursor.execute(
+        "INSERT INTO warpy_metadata (id, models_hash) VALUES (?, ?)", (1, models_hash))
 
 
 def get_db_connection(parent_dir: str) -> sqlite3.Connection:
@@ -71,9 +89,14 @@ def delete_temporary_directory(tmpdir: str) -> None:
 
 def main():
     parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-    conn = get_db_connection(parent_dir)
+    models_file_path = os.path.join(parent_dir, 'models.py')
+    models_hash = hash_models_py(models_file_path)
 
+    conn = get_db_connection(parent_dir)
     cursor = conn.cursor()
+
+    create_or_update_warpy_metadata(cursor, models_hash)
+    conn.commit()
 
     tmpdir = 'temp_parquet_files'
     create_temporary_directory(tmpdir)
@@ -85,6 +108,13 @@ def main():
     create_tar_gz_archive(tmpdir, archive_name)
 
     delete_temporary_directory(tmpdir)
+
+    # Include warpy_metadata table in the tar.gz archive
+    df = pd.read_sql_query("SELECT * FROM warpy_metadata", conn)
+    pq.write_table(
+        table=pa.Table.from_pandas(df),
+        where=os.path.join(tmpdir, "warpy_metadata.parquet")
+    )
 
     print(
         f"Dataset latest cast timestamp: {get_latest_timestamp(cursor)}; dataset highest fid: {get_highest_fid(cursor)}; dataset highest block number: {get_highest_block_num(cursor)}; tar.gz shasum: {compute_hash_of_archive(archive_name)}")

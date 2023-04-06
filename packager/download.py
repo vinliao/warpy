@@ -7,8 +7,27 @@ from tqdm import tqdm
 import pyarrow.parquet as pq
 from sqlalchemy import create_engine
 import shutil
+import hashlib
 
 from models import Base
+
+
+def hash_models_py(file_path: str) -> str:
+    with open(file_path, 'rb') as f:
+        return hashlib.sha256(f.read()).hexdigest()[:4]
+
+
+def get_local_and_downloaded_hashes(parent_dir: str, extracted_dir: str) -> tuple:
+    models_file_path = os.path.join(parent_dir, 'models.py')
+    local_hash = hash_models_py(models_file_path)
+
+    downloaded_metadata_path = os.path.join(
+        extracted_dir, "warpy_metadata.parquet")
+    downloaded_metadata_df = pq.read_table(
+        downloaded_metadata_path).to_pandas()
+    downloaded_hash = downloaded_metadata_df.loc[0, 'models_hash']
+
+    return local_hash, downloaded_hash
 
 
 def download_file(url: str, filename: str) -> None:
@@ -56,14 +75,33 @@ def main():
     extracted_dir = os.path.join(parent_dir, 'datasets')
     db_path = os.path.join(parent_dir, 'datasets', 'datasets.db')
 
+    # download_file(url, filename)
+    extract_archive(archive_path, extracted_dir)
+
     # Remove existing 'datasets' directory if it exists
     if os.path.exists(extracted_dir):
         shutil.rmtree(extracted_dir)
 
-    download_file(url, filename)
     extract_archive(archive_path, extracted_dir)
     create_sqlite_database(db_path)
     parquet_to_sqlite(extracted_dir, db_path)
+
+    # activate these all later
+    # local_hash, downloaded_hash = get_local_and_downloaded_hashes(
+    #     parent_dir, extracted_dir)
+
+    # if local_hash == downloaded_hash:
+    #     print("Hash verification successful: The downloaded data matches the models.py.")
+
+    #     # Remove existing 'datasets' directory if it exists
+    #     if os.path.exists(extracted_dir):
+    #         shutil.rmtree(extracted_dir)
+
+    #     extract_archive(archive_path, extracted_dir)
+    #     create_sqlite_database(db_path)
+    #     parquet_to_sqlite(extracted_dir, db_path)
+    # else:
+    #     print("Oops, it seems like the branch you're working on is out of date. Please run `git pull` to get the latest updates.")
 
 
 if __name__ == '__main__':

@@ -11,8 +11,10 @@ from langchain.agents import create_sql_agent
 from langchain.agents.agent_toolkits import SQLDatabaseToolkit
 from langchain.sql_database import SQLDatabase
 from dotenv import load_dotenv
+import re
 
 load_dotenv()
+
 
 def remove_imports_from_models(model_str):
     start = model_str.index("class")
@@ -28,9 +30,18 @@ def get_sqlalchemy_models():
 def execute_raw_sql(query: str) -> pl.DataFrame:
     with sqlite3.connect('datasets/datasets.db') as con:
         cur = con.cursor()
-        cur.execute(query)
-        column_names = [description[0] for description in cur.description]
-        return pl.DataFrame(cur, schema=column_names)
+        if re.search(r"(?i)\b(insert|update|delete|drop)\b", query):
+            user_confirmation = input(
+                "This operation will modify or delete data. Are you sure you want to proceed? (y/N): ")
+            if user_confirmation.lower() != 'y':
+                print("Operation cancelled.")
+                return
+            cur.execute(query)
+            print(f"{cur.rowcount} rows affected.")
+        else:
+            cur.execute(query)
+            column_names = [description[0] for description in cur.description]
+            return pl.DataFrame(cur, schema=column_names)
 
 
 def execute_natural_language_query(query: str) -> pl.DataFrame:
@@ -59,11 +70,7 @@ def execute_natural_language_query(query: str) -> pl.DataFrame:
     sql_query = chat(messages)
     print(f"SQL from ChatGPT: \n\n{sql_query.content}\n")
 
-    with sqlite3.connect('datasets/datasets.db') as con:
-        cur = con.cursor()
-        cur.execute(sql_query.content)
-        column_names = [description[0] for description in cur.description]
-        return pl.DataFrame(cur, schema=column_names)
+    execute_raw_sql(sql_query.content)
 
 
 def execute_advanced_query(query: str):

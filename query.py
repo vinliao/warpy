@@ -65,7 +65,7 @@ def execute_natural_language_query(query: str) -> Optional[pl.DataFrame]:
     """
 
     system_prompt = SystemMessage(
-        content="You are a SQL writer. If the user asks about anything than SQL, deny. You are a very good SQL writer. Nothing else.")
+        content="You are a SQL writer. If the user asks about anything than SQL, deny. You are a very good SQL writer. Nothing else. Don't explain, don't say anything except the SQL.")
 
     initial_prompt = HumanMessage(
         content=f"{initial_prompt_raw}\n\n{get_sqlalchemy_models()}")

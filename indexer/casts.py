@@ -9,9 +9,9 @@ import requests
 import time
 import datetime
 from typing import List
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from utils.models import Cast
+from sqlalchemy.engine import Engine
 
 
 load_dotenv()
@@ -94,12 +94,7 @@ def dump_casts_to_sqlite(engine, casts: List[Cast], timestamp: int) -> None:
             session.commit()
 
 
-def main():
-    # create the file path relative to the parent directory
-    parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-    db_path = os.path.join(parent_dir, 'datasets', 'datasets.db')
-    engine = create_engine('sqlite:///' + db_path)
-
+def main(engine: Engine):
     with sessionmaker(bind=engine)() as session:
         latest_cast = session.query(Cast).order_by(
             Cast.timestamp.desc()).first()

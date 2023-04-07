@@ -4,8 +4,9 @@ import aiohttp
 from dotenv import load_dotenv
 from sqlalchemy.orm import sessionmaker
 from utils.models import Base, User, EthTransaction, ERC1155Metadata
-from sqlalchemy import create_engine, func
+from sqlalchemy import func
 from datetime import datetime
+from sqlalchemy.engine import Engine
 
 load_dotenv()
 
@@ -185,11 +186,7 @@ def make_transaction_models(transfer, address_fid, address_external):
     return eth_transaction_dict, erc1155_metadata_dicts
 
 
-def main():
-    parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-    db_path = os.path.join(parent_dir, 'datasets', 'datasets.db')
-    engine = create_engine('sqlite:///' + db_path)
-
+def main(engine: Engine):
     with sessionmaker(bind=engine)() as session:
         users = session.query(User).filter(
             User.external_address.isnot(None)).order_by(User.fid.desc()).all()

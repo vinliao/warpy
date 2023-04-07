@@ -5,9 +5,10 @@ import sqlite3
 import requests
 from tqdm import tqdm
 import pyarrow.parquet as pq
-from sqlalchemy import create_engine
 import shutil
 import hashlib
+from sqlalchemy.engine import Engine
+from sqlalchemy.orm import sessionmaker
 
 from utils.models import Base
 
@@ -50,30 +51,24 @@ def extract_archive(archive_path: str, extracted_dir: str) -> None:
         tar.extractall(path=extracted_dir)
 
 
-def create_sqlite_database(db_path: str) -> None:
-    engine = create_engine(f'sqlite:///{db_path}')
-    Base.metadata.create_all(engine)
-
-
-def parquet_to_sqlite(extracted_dir: str, db_path: str) -> None:
-    with sqlite3.connect(db_path) as conn:
+def parquet_to_sqlite(engine: Engine, extracted_dir: str) -> None:
+    with sessionmaker(bind=engine)() as session:
         for root, dirs, files in os.walk(extracted_dir):
             for file in files:
                 if file.endswith('.parquet'):
                     table_name = os.path.splitext(file)[0]
                     file_path = os.path.join(root, file)
                     df = pq.read_table(file_path).to_pandas()
-                    df.to_sql(table_name, conn,
+                    df.to_sql(table_name, session.connection(),
                               if_exists='replace', index=False)
 
 
-def main():
+def main(engine: Engine):
     url = "https://pub-3916d8c82abb435eb70175747fdc2119.r2.dev/datasets.tar.gz"
     filename = "datasets.tar.gz"
     archive_path = 'datasets.tar.gz'
     parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
     extracted_dir = os.path.join(parent_dir, 'datasets')
-    db_path = os.path.join(parent_dir, 'datasets', 'datasets.db')
 
     # download_file(url, filename)
     extract_archive(archive_path, extracted_dir)
@@ -83,8 +78,7 @@ def main():
         shutil.rmtree(extracted_dir)
 
     extract_archive(archive_path, extracted_dir)
-    create_sqlite_database(db_path)
-    parquet_to_sqlite(extracted_dir, db_path)
+    parquet_to_sqlite(engine, extracted_dir)
 
     # activate these all later
     # local_hash, downloaded_hash = get_local_and_downloaded_hashes(

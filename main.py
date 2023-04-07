@@ -18,6 +18,9 @@ from utils.query import (
     execute_advanced_query
 )
 
+from sqlalchemy import create_engine
+engine = create_engine('sqlite:///datasets/datasets.db')
+
 load_dotenv()
 warpcast_hub_key = os.getenv('WARPCAST_HUB_KEY')
 openai_api_key = os.getenv('OPENAI_API_KEY')
@@ -114,7 +117,7 @@ def refresh_user_data():
         print("Error: you need to set the environment variable WARPCAST_HUB_KEY. Run `python main.py env warpcast` to do so.")
         return
 
-    asyncio.run(user_indexer_main())
+    asyncio.run(user_indexer_main(engine))
 
 
 @indexer_app.command("cast")
@@ -124,7 +127,7 @@ def refresh_cast_data():
         print("Error: you need to set the environment variable WARPCAST_HUB_KEY. Run `python main.py env warpcast` to do so.")
         return
 
-    cast_indexer_main()
+    cast_indexer_main(engine)
 
 
 @indexer_app.command("reaction")
@@ -134,7 +137,7 @@ def refresh_reaction_data():
         print("Error: you need to set the environment variable WARPCAST_HUB_KEY. Run `python main.py env warpcast` to do so.")
         return
 
-    asyncio.run(reaction_indexer_main())
+    asyncio.run(reaction_indexer_main(engine))
 
 
 @indexer_app.command("eth")
@@ -144,14 +147,14 @@ def refresh_eth_data():
         print("Error: you need to set the environment variable ALCHEMY_API_KEY. Run `python main.py env alchemy` to do so.")
         return
 
-    asyncio.run(eth_indexer_main())
+    asyncio.run(eth_indexer_main(engine))
 
 
 @indexer_app.command("ens")
 def refresh_ens_data():
     """Refresh ENS data."""
 
-    asyncio.run(ensdata_indexer_main())
+    asyncio.run(ensdata_indexer_main(engine))
 
 
 @app.command()

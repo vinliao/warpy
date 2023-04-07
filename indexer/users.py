@@ -6,8 +6,8 @@ import time
 import asyncio
 import aiohttp
 from utils.models import User, Location, Base
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.engine import Engine
 
 load_dotenv()
 warpcast_hub_key = os.getenv("WARPCAST_HUB_KEY")
@@ -191,7 +191,7 @@ def save_bulk_data(engine, user_list, location_list):
         session.commit()
 
 
-async def main():
+async def main(engine: Engine):
     warpcast_users = get_all_users_from_warpcast(warpcast_hub_key)
 
     warpcast_user_data = [extract_warpcast_user_data(
@@ -205,10 +205,6 @@ async def main():
     # # filter dupliate and remove None for locations
     location_list = list(
         {location.id: location for location in location_list}.values())
-
-    parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-    db_path = os.path.join(parent_dir, 'datasets', 'datasets.db')
-    engine = create_engine('sqlite:///' + db_path)
 
     create_tables(engine)
     save_bulk_data(engine, user_list, location_list)

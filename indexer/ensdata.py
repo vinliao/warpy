@@ -3,9 +3,8 @@ import aiohttp
 from typing import List
 from sqlalchemy.orm import Session
 from utils.models import ExternalAddress, User
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-import os
+from sqlalchemy.engine import Engine
 
 
 async def get_single_user_from_ensdata(address: str):
@@ -73,11 +72,7 @@ async def process_addresses(session, addresses: List[str]):
     save_users_to_db(session, users)
 
 
-async def main():
-    parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-    db_path = os.path.join(parent_dir, 'datasets', 'datasets.db')
-    engine = create_engine('sqlite:///' + db_path)
-
+async def main(engine: Engine):
     with sessionmaker(bind=engine)() as session:
         users = session.query(User).filter(
             User.external_address != None,

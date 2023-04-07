@@ -1,12 +1,11 @@
 from dotenv import load_dotenv
 import os
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from utils.models import Cast, Reaction
 import asyncio
 import aiohttp
 from datetime import datetime, timedelta
-from sqlalchemy.orm import aliased
+from sqlalchemy.engine import Engine
 
 
 load_dotenv()
@@ -43,7 +42,7 @@ async def fetch_reactions(session, base_url, headers):
     return reactions
 
 
-async def get_cast_reactions_async(cast_hashes, warpcast_hub_key, n, session):
+async def get_cast_reactions_async(cast_hashes, warpcast_hub_key, n):
     async with aiohttp.ClientSession() as aiohttp_session:
         headers = {"Authorization": f"Bearer {warpcast_hub_key}"}
         reactions = {}
@@ -59,21 +58,7 @@ async def get_cast_reactions_async(cast_hashes, warpcast_hub_key, n, session):
                     reactions[cast_hash] = [extract_reactions(
                         reaction) for reaction in response_data if reaction]
 
-            # Dump to the database after fetching reactions for each batch of cast hashes
-            insert_reactions(session, reactions)
-            reactions.clear()  # Clear the reactions dictionary for the next batch
-
         return reactions
-
-
-async def get_cast_reactions(cast_hashes, bearer_token, n=10):
-    parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-    db_path = os.path.join(parent_dir, 'datasets', 'datasets.db')
-    engine = create_engine('sqlite:///' + db_path)
-
-    with sessionmaker(engine)() as session:
-        reactions = await get_cast_reactions_async(cast_hashes, bearer_token, n, session)
-    return reactions
 
 
 def extract_reactions(data):
@@ -104,15 +89,10 @@ def insert_reactions(session, reactions):
 
     # Commit the changes to the database
     session.commit()
-    print(f"Inserted {len(reactions)} reactions into the database.")
+    print(f"Inserted reactions for {len(reactions)} casts")
 
 
-# create the file path relative to the parent directory
-async def main():
-    parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-    db_path = os.path.join(parent_dir, 'datasets', 'datasets.db')
-    engine = create_engine('sqlite:///' + db_path)
-
+async def main(engine: Engine):
     with sessionmaker(engine)() as session:
         one_week_ago = datetime.now() - timedelta(days=7)
         one_week_ago_unix_ms = int(one_week_ago.timestamp() * 1000)
@@ -127,4 +107,8 @@ async def main():
         print(f"Fetching reactions for {len(casts)} casts...")
 
         cast_hashes = [cast.hash for cast in casts]
-        await get_cast_reactions(cast_hashes, warpcast_hub_key, n=1000)
+        batch_size = 1000
+        for i in range(0, len(cast_hashes), batch_size):
+            reactions = await get_cast_reactions_async(
+                cast_hashes[i:i + batch_size], warpcast_hub_key, n=1000)
+            insert_reactions(session, reactions)

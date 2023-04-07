@@ -44,3 +44,4 @@ build/
 
 # Ignore all .sql files
 *.sql
+*.csv

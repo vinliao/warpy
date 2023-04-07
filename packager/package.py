@@ -120,7 +120,3 @@ def main():
         f"Dataset latest cast timestamp: {get_latest_timestamp(cursor)}; dataset highest fid: {get_highest_fid(cursor)}; dataset highest block number: {get_highest_block_num(cursor)}; tar.gz shasum: {compute_hash_of_archive(archive_name)}")
 
     conn.close()
-
-
-if __name__ == "__main__":
-    main()

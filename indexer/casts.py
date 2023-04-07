@@ -11,7 +11,7 @@ import datetime
 from typing import List
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from models import Cast
+from utils.models import Cast
 
 
 load_dotenv()
@@ -107,7 +107,3 @@ def main():
 
         casts = get_casts_until_timestamp(warpcast_hub_key, latest_timestamp)
         dump_casts_to_sqlite(engine, casts, latest_timestamp)
-
-
-if __name__ == '__main__':
-    main()

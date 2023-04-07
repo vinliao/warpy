@@ -3,7 +3,7 @@ import asyncio
 import aiohttp
 from dotenv import load_dotenv
 from sqlalchemy.orm import sessionmaker
-from models import Base, User, EthTransaction, ERC1155Metadata
+from utils.models import Base, User, EthTransaction, ERC1155Metadata
 from sqlalchemy import create_engine, func
 from datetime import datetime
 
@@ -210,7 +210,3 @@ def main():
 
         asyncio.run(process_users_in_batches(session, users, batch_size=5))
         print(f"Done inserting transactions")
-
-
-if __name__ == "__main__":
-    asyncio.run(main())

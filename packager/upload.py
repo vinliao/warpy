@@ -34,7 +34,3 @@ def main():
 
     # Set the S3 object name
     upload_to_s3(tar_gz_file_path, bucket_name, tar_gz_file_name)
-
-
-if __name__ == "__main__":
-    main()

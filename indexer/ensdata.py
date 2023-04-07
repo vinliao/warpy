@@ -2,7 +2,7 @@ import asyncio
 import aiohttp
 from typing import List
 from sqlalchemy.orm import Session
-from models import ExternalAddress, User
+from utils.models import ExternalAddress, User
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 import os
@@ -91,7 +91,3 @@ async def main():
         for i in range(0, len(addresses), batch_size):
             batch = addresses[i:i+batch_size]
             await process_addresses(session, batch)
-
-
-if __name__ == "__main__":
-    asyncio.run(main())

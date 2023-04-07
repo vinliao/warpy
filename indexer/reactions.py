@@ -2,7 +2,7 @@ from dotenv import load_dotenv
 import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from models import Cast, Reaction
+from utils.models import Cast, Reaction
 import asyncio
 import aiohttp
 from datetime import datetime, timedelta
@@ -128,7 +128,3 @@ async def main():
 
         cast_hashes = [cast.hash for cast in casts]
         await get_cast_reactions(cast_hashes, warpcast_hub_key, n=1000)
-
-
-if __name__ == "__main__":
-    asyncio.run(main())

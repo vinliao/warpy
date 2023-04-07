@@ -9,7 +9,7 @@ from sqlalchemy import create_engine
 import shutil
 import hashlib
 
-from models import Base
+from utils.models import Base
 
 
 def hash_models_py(file_path: str) -> str:
@@ -102,7 +102,3 @@ def main():
     #     parquet_to_sqlite(extracted_dir, db_path)
     # else:
     #     print("Oops, it seems like the branch you're working on is out of date. Please run `git pull` to get the latest updates.")
-
-
-if __name__ == '__main__':
-    main()

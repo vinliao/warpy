@@ -12,8 +12,7 @@ from indexer.ensdata import main as ensdata_indexer_main
 from packager.package import main as packager_main
 from packager.download import main as downloader_main
 from packager.upload import main as uploader_main
-
-from query import (
+from utils.query import (
     execute_raw_sql,
     execute_natural_language_query,
     execute_advanced_query

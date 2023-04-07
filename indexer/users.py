@@ -5,7 +5,7 @@ import requests
 import time
 import asyncio
 import aiohttp
-from models import User, Location, Base
+from utils.models import User, Location, Base
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -214,7 +214,3 @@ async def main():
     save_bulk_data(engine, user_list, location_list)
     await update_unregistered_users(engine)
     delete_unregistered_users(engine)
-
-
-if __name__ == '__main__':
-    asyncio.run(main())

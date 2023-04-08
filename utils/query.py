@@ -24,7 +24,7 @@ def remove_imports_from_models(model_str):
 
 
 def get_sqlalchemy_models():
-    with open('models.py', 'r') as f:
+    with open('utils/models.py', 'r') as f:
         sqlalchemy_models = f.read()
     return remove_imports_from_models(sqlalchemy_models)
 

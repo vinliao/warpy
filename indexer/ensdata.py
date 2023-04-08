@@ -41,6 +41,7 @@ class EnsDataFetcher:
             process_response=cls.process_response,
             error_handler=cls.error_handler,
             get_next_page_token=cls.get_next_page_token,
+            batch_size=5
         )
 
         # flatten list, it's 2d because some fetches contain cursor

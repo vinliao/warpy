@@ -3,7 +3,7 @@ import asyncio
 import aiohttp
 
 
-async def batch_fetcher(batch_elements: List, build_url: Callable[[Any, Any], str], process_response: Callable[[Any], Any], error_handler: Callable[[Any], None], get_next_page_token: Callable[[Any], Any], cursor_batch_size: int = None, max_retries: int = 3, timeout_seconds: int = 10):
+async def batch_fetcher(batch_elements: List, build_url: Callable[[Any, Any], str], process_response: Callable[[Any], Any], error_handler: Callable[[Any], None], get_next_page_token: Callable[[Any], Any], batch_size: int = 10, max_retries: int = 3, timeout_seconds: int = 10):
     async def fetch_single_element(element, session, retries=max_retries):
         page_token = None
         results = []
@@ -35,13 +35,9 @@ async def batch_fetcher(batch_elements: List, build_url: Callable[[Any, Any], st
 
     async with aiohttp.ClientSession() as session:
         tasks = []
-        if cursor_batch_size:
-            for i in range(0, len(batch_elements), cursor_batch_size):
-                tasks += [asyncio.create_task(fetch_single_element(element, session))
-                          for element in batch_elements[i:i + cursor_batch_size]]
-        else:
-            tasks = [asyncio.create_task(fetch_single_element(element, session))
-                     for element in batch_elements]
+        for i in range(0, len(batch_elements), batch_size):
+            tasks += [asyncio.create_task(fetch_single_element(element, session))
+                      for element in batch_elements[i:i + batch_size]]
         results = await asyncio.gather(*tasks)
 
     return list(filter(None, results))

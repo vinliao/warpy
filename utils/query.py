@@ -24,12 +24,11 @@ def remove_imports_from_models(model_str):
 
 
 def get_sqlalchemy_models():
-    with open('utils/models.py', 'r') as f:
+    with open('models.py', 'r') as f:
         sqlalchemy_models = f.read()
     return remove_imports_from_models(sqlalchemy_models)
 
 
-# TODO: delete random will error out (sqlite problem)
 def execute_raw_sql(query: str) -> Optional[pl.DataFrame]:
     print()
     console.print(
@@ -44,11 +43,10 @@ def execute_raw_sql(query: str) -> Optional[pl.DataFrame]:
 
             if user_confirmation.lower() != "y":
                 print("Operation cancelled.")
-                return None
+                return
 
             cur.execute(query)
             print(f"{cur.rowcount} rows affected.")
-            return None
         else:
             cur.execute(query)
             column_names = [description[0] for description in cur.description]

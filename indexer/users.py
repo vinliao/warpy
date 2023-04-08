@@ -3,19 +3,14 @@ from dotenv import load_dotenv
 import os
 import requests
 import time
-import asyncio
-import aiohttp
 from utils.models import User, Location, Base
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.engine import Engine
+from utils.fetcher import SearchcasterFetcher
+from typing import List
 
 load_dotenv()
 warpcast_hub_key = os.getenv("WARPCAST_HUB_KEY")
-
-
-# ============================================================
-# ====================== WARPCAST ============================
-# ============================================================
 
 
 def get_users_from_warpcast(key: str, cursor: str = None, limit: int = 1000):
@@ -74,36 +69,12 @@ def extract_warpcast_user_data(user):
     return user_data, location if location.id else None
 
 
-async def get_single_user_from_searchcaster(username):
-    url = f'https://searchcaster.xyz/api/profiles?username={username}'
-
-    print(f"Fetching {username} from {url}")
-
-    async with aiohttp.ClientSession() as session:
-        while True:
-            try:
-                timeout = aiohttp.ClientTimeout(total=10)
-                async with session.get(url, timeout=timeout) as response:
-                    # Sleep between requests to avoid rate limiting
-                    await asyncio.sleep(1)
-
-                    response.raise_for_status()
-                    json_data = await response.json()
-                    if json_data:
-                        return json_data[0]
-                    else:
-                        raise ValueError(
-                            f"No results found for username {username}")
-            except (aiohttp.ClientResponseError, asyncio.TimeoutError) as e:
-                print(f"Error occurred for {username}: {e}. Retrying...")
-                await asyncio.sleep(5)  # Wait for 5 seconds before retrying
-
-
-async def get_users_from_searchcaster(usernames):
-    tasks = [asyncio.create_task(get_single_user_from_searchcaster(username))
-             for username in usernames]
-    users = await asyncio.gather(*tasks)
-    return users
+# New function to get users from Searchcaster using the SearchcasterFetcher class
+async def get_users_from_searchcaster(usernames: List[str]):
+    base_url = 'https://searchcaster.xyz/api/profiles'
+    fetcher = SearchcasterFetcher(base_url)
+    results = await fetcher.fetch(usernames)
+    return results.values()
 
 
 def extract_searchcaster_user_data(data):
@@ -116,41 +87,39 @@ def extract_searchcaster_user_data(data):
 
 
 async def update_unregistered_users(engine):
-    session = sessionmaker(bind=engine)()
+    with sessionmaker(bind=engine)() as session:
+        # Read data from the user table and filter rows where registered_at is -1
+        unregistered_users = session.query(
+            User).filter(User.registered_at == -1).all()
 
-    # Read data from the user table and filter rows where registered_at is -1
-    unregistered_users = session.query(
-        User).filter(User.registered_at == -1).all()
+        # Get usernames from unregistered_users
+        unregistered_usernames = [user.username for user in unregistered_users]
+        print(unregistered_usernames)
 
-    # Get usernames from unregistered_users
-    unregistered_usernames = [user.username for user in unregistered_users]
+        if unregistered_usernames:
+            batch_size = 50
 
-    if unregistered_usernames:
-        batch_size = 50
+            for i in range(0, len(unregistered_usernames), batch_size):
+                batch_usernames = unregistered_usernames[i:i + batch_size]
+                searchcaster_users = await get_users_from_searchcaster(batch_usernames)
+                searchcaster_user_data = [extract_searchcaster_user_data(
+                    user) for user in searchcaster_users]
 
-        for i in range(0, len(unregistered_usernames), batch_size):
-            batch_usernames = unregistered_usernames[i:i + batch_size]
-            searchcaster_users = await get_users_from_searchcaster(batch_usernames)
-            searchcaster_user_data = [extract_searchcaster_user_data(
-                user) for user in searchcaster_users]
+                # Bulk update User table with searchcaster_user_data
+                update_data = []
+                for user_data in searchcaster_user_data:
+                    # if farcaster address is not None
+                    # if farcaster address is not None and registered_at is not 0
+                    if user_data['farcaster_address'] is not None and user_data['registered_at'] != 0:
+                        update_data.append({
+                            'fid': user_data['fid'],
+                            'farcaster_address': user_data['farcaster_address'],
+                            'external_address': user_data['external_address'],
+                            'registered_at': user_data['registered_at'],
+                        })
 
-            # Bulk update User table with searchcaster_user_data
-            update_data = []
-            for user_data in searchcaster_user_data:
-                # if farcaster address is not None
-                # if farcaster address is not None and registered_at is not 0
-                if user_data['farcaster_address'] is not None and user_data['registered_at'] != 0:
-                    update_data.append({
-                        'fid': user_data['fid'],
-                        'farcaster_address': user_data['farcaster_address'],
-                        'external_address': user_data['external_address'],
-                        'registered_at': user_data['registered_at'],
-                    })
-
-            session.bulk_update_mappings(User, update_data)
-            session.commit()
-
-    session.close()
+                session.bulk_update_mappings(User, update_data)
+                session.commit()
 
 
 def delete_unregistered_users(engine):

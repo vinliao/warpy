@@ -3,6 +3,7 @@ import asyncio
 import aiohttp
 from abc import ABC, abstractmethod
 from typing import Any, Dict
+import os
 
 
 class BatchFetcher(ABC):
@@ -16,7 +17,19 @@ class BatchFetcher(ABC):
         return {item: result for item, result in zip(items, results)}
 
     async def _fetch_item(self, item: str) -> Any:
-        return await self._fetch_item_with_pagination(item, None)
+        async with aiohttp.ClientSession() as session:
+            try:
+                url, headers, timeout, method, payload = self._prepare_request(
+                    item)
+                async with await self._send_request(session, url, headers, timeout, method, payload) as response:
+                    await asyncio.sleep(1)
+                    response.raise_for_status()
+                    data = await response.json()
+                    result, _ = self._process_response(data)
+                    return result
+            except (aiohttp.ClientResponseError, asyncio.TimeoutError) as e:
+                print(f"Error occurred for {item}: {e}. Retrying...")
+                await asyncio.sleep(5)
 
     async def _fetch_item_with_pagination(self, item: str, cursor: Optional[str]) -> Any:
         async with aiohttp.ClientSession() as session:
@@ -39,7 +52,7 @@ class BatchFetcher(ABC):
                     await asyncio.sleep(5)
 
     @abstractmethod
-    def _prepare_request(self, item: str, cursor: Optional[str]) -> tuple:
+    def _prepare_request(self, item: str, cursor: Optional[str] = None) -> tuple:
         pass
 
     @abstractmethod
@@ -47,6 +60,7 @@ class BatchFetcher(ABC):
         pass
 
     async def _send_request(self, session, url, headers, timeout, method, payload):
+        print(f"Sending {method} request to {url}")
         if method == "GET":
             return await session.get(url, headers=headers, timeout=timeout)
         elif method == "POST":
@@ -54,11 +68,13 @@ class BatchFetcher(ABC):
 
 
 class SearchcasterFetcher(BatchFetcher):
-    def _prepare_request(self, username: str, cursor: Optional[str]) -> tuple:
+    def _prepare_request(self, username: str, cursor: Optional[str] = None) -> tuple:
         url = f'{self.base_url}?username={username}'
         headers = None
         timeout = aiohttp.ClientTimeout(total=10)
-        return url, headers, timeout
+        method = "GET"
+        payload = None
+        return url, headers, timeout, method, payload
 
     def _process_response(self, data: Dict[str, Any]) -> tuple:
         if data:

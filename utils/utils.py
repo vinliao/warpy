@@ -10,7 +10,6 @@ async def batch_fetcher(batch_elements: List, build_url: Callable[[Any, Any], st
         while True:
             try:
                 url = build_url(element, page_token)
-                print(f"Fetching {url}")
                 timeout = aiohttp.ClientTimeout(total=timeout_seconds)
                 async with session.get(url, timeout=timeout) as response:
                     await asyncio.sleep(1)
@@ -18,7 +17,7 @@ async def batch_fetcher(batch_elements: List, build_url: Callable[[Any, Any], st
                     json_data = await response.json()
 
                     if json_data:
-                        results.append(process_response(json_data))
+                        results += process_response(json_data)
                         page_token = get_next_page_token(json_data)
                         if page_token is None:
                             break

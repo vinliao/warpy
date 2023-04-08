@@ -1,59 +1,75 @@
+import asyncio
+import aiohttp
 from typing import List
 from sqlalchemy.orm import Session
 from utils.models import ExternalAddress, User
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.engine import Engine
-from utils.utils import batch_fetcher
-from typing import Any
 
 
-class EnsDataFetcher:
-    @staticmethod
-    def build_url(address: str, _: Any) -> str:
-        return f'https://ensdata.net/{address}'
+async def get_single_user_from_ensdata(address: str):
+    url = f'https://ensdata.net/{address}'
 
-    @staticmethod
-    def process_response(data):
-        return ExternalAddress(
-            address=data.get('address'),
-            ens=data.get('ens'),
-            url=data.get('url'),
-            github=data.get('github'),
-            twitter=data.get('twitter'),
-            telegram=data.get('telegram'),
-            email=data.get('email'),
-            discord=data.get('discord')
-        )
+    print(f"Fetching {address} from {url}")
 
-    @staticmethod
-    def error_handler(address, error):
-        print(f"Error occurred for {address}: {error}. Retrying...")
+    async with aiohttp.ClientSession() as session:
+        retries = 3
+        while retries > 0:
+            try:
+                timeout = aiohttp.ClientTimeout(total=10)
+                async with session.get(url, timeout=timeout) as response:
+                    # Sleep between requests to avoid rate limiting
+                    await asyncio.sleep(1)
 
-    @staticmethod
-    def get_next_page_token(_):
+                    response.raise_for_status()
+                    json_data = await response.json()
+                    if json_data:
+                        return json_data
+                    else:
+                        raise ValueError(
+                            f"No results found for address {address}")
+            except (aiohttp.ClientResponseError, asyncio.TimeoutError) as e:
+                print(f"Error occurred for {address}: {e}. Retrying...")
+                await asyncio.sleep(5)  # Wait for 5 seconds before retrying
+                retries -= 1
+        print(f"Skipping address {address} after 3 retries.")
         return None
 
-    @classmethod
-    async def get_users_from_ensdata(cls, addresses: List[str]):
-        users = await batch_fetcher(
-            batch_elements=addresses,
-            build_url=cls.build_url,
-            process_response=cls.process_response,
-            error_handler=cls.error_handler,
-            get_next_page_token=cls.get_next_page_token,
-            batch_size=5
-        )
 
-        # flatten list, it's 2d because some fetches contain cursor
-        # (like eth and reaction batch fetches)
-        users = [user for sublist in users for user in sublist]
-        return users
+async def get_users_from_ensdata(addresses: List[str]):
+    tasks = [asyncio.create_task(get_single_user_from_ensdata(address))
+             for address in addresses]
+    users = await asyncio.gather(*tasks)
+    return list(filter(None, users))
 
 
-def save_users_to_db(session: Session, users: List[ExternalAddress]):
+def extract_ensdata_user_data(data):
+    return ExternalAddress(
+        address=data.get('address'),
+        ens=data.get('ens'),
+        url=data.get('url'),
+        github=data.get('github'),
+        twitter=data.get('twitter'),
+        telegram=data.get('telegram'),
+        email=data.get('email'),
+        discord=data.get('discord')
+    )
+
+
+def save_users_to_db(session: Session, users: List[dict]):
     for user in users:
-        session.merge(user)
+        user_data = extract_ensdata_user_data(user)
+        existing_user = session.query(ExternalAddress).filter_by(
+            address=user_data.address).first()
+        if existing_user:
+            session.delete(existing_user)
+        session.add(user_data)
     session.commit()
+
+
+async def process_addresses(session, addresses: List[str]):
+    users = await get_users_from_ensdata(addresses)
+    save_users_to_db(session, users)
 
 
 async def main(engine: Engine):
@@ -66,9 +82,7 @@ async def main(engine: Engine):
         ).all()
         addresses = [user.external_address for user in users]
 
-        ensdata_fetcher = EnsDataFetcher()
-        batch_size = 5
+        batch_size = 50
         for i in range(0, len(addresses), batch_size):
             batch = addresses[i:i+batch_size]
-            users = await ensdata_fetcher.get_users_from_ensdata(batch)
-            save_users_to_db(session, users)
+            await process_addresses(session, batch)

@@ -6,8 +6,7 @@ import time
 from utils.models import User, Location, Base
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.engine import Engine
-from utils.fetcher import SearchcasterFetcher
-from typing import List
+from utils.fetcher import WarpcastUserFetcher, SearchcasterFetcher
 
 load_dotenv()
 warpcast_hub_key = os.getenv("WARPCAST_HUB_KEY")
@@ -69,12 +68,12 @@ def extract_warpcast_user_data(user):
     return user_data, location if location.id else None
 
 
-# New function to get users from Searchcaster using the SearchcasterFetcher class
-async def get_users_from_searchcaster(usernames: List[str]):
-    base_url = 'https://searchcaster.xyz/api/profiles'
-    fetcher = SearchcasterFetcher(base_url)
-    results = await fetcher.fetch(usernames)
-    return results.values()
+# # New function to get users from Searchcaster using the SearchcasterFetcher class
+# async def get_users_from_searchcaster(usernames: List[str]):
+#     base_url = 'https://searchcaster.xyz/api/profiles'
+#     fetcher = SearchcasterFetcher(base_url)
+#     results = await fetcher.fetch(usernames)
+#     return results.values()
 
 
 def extract_searchcaster_user_data(data):
@@ -161,21 +160,28 @@ def save_bulk_data(engine, user_list, location_list):
 
 
 async def main(engine: Engine):
-    warpcast_users = get_all_users_from_warpcast(warpcast_hub_key)
-
-    warpcast_user_data = [extract_warpcast_user_data(
-        user) for user in warpcast_users]
-
-    # Extract the user_data, user_extra_data, and location lists
-    user_list = [data[0] for data in warpcast_user_data]
-    location_list = [data[1]
-                     for data in warpcast_user_data if data[1]]
-
-    # # filter dupliate and remove None for locations
-    location_list = list(
-        {location.id: location for location in location_list}.values())
+    warpcast_user_fetcher = WarpcastUserFetcher(warpcast_hub_key)
+    warpcast_users = warpcast_user_fetcher.fetch_all_data()
+    user_list, location_list = warpcast_user_fetcher.process_users(
+        warpcast_users)
 
     create_tables(engine)
     save_bulk_data(engine, user_list, location_list)
-    await update_unregistered_users(engine)
-    delete_unregistered_users(engine)
+
+    # # with sessionmaker(bind=engine)() as session:
+    # #     new_users = session.query(User).filter(
+    # #         User.registered_at == -1).all()
+    # #     new_usernames = [user.username for user in new_users]
+
+    # #     batch_size = 50
+    # #     for i in range(0, len(new_usernames), batch_size):
+    # #         batch_usernames = new_usernames[i:i + batch_size]
+
+    # #         # continue
+
+    # searchcaster_fetcher = SearchcasterFetcher()
+    # searchcaster_data = await searchcaster_fetcher.fetch_users(
+    #     ['farcaster', 'v', 'dwr'])
+    # users = searchcaster_fetcher.process_user_data(searchcaster_data)
+    # print(users)
+    # # print(searchcaster_data)

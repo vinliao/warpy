@@ -1,167 +1,183 @@
-from typing import Dict, Any, Optional
+from typing import Optional, Dict
 import asyncio
+import requests
 import aiohttp
+import abc
 from abc import ABC, abstractmethod
 from typing import Any, Dict
-import os
+from utils.models import Reaction, Location, User, Cast
+import time
+from typing import Tuple, List
 
 
-class BatchFetcher(ABC):
-    def __init__(self, base_url: str, batch_size: int = 10):
-        self.base_url = base_url
-        self.batch_size = batch_size
+class AbstractFetcher(abc.ABC):
 
-    async def fetch(self, items: list) -> Dict[str, Any]:
-        tasks = [self._fetch_item(item) for item in items]
-        results = await asyncio.gather(*tasks)
-        return {item: result for item, result in zip(items, results)}
-
-    async def _fetch_item(self, item: str) -> Any:
-        async with aiohttp.ClientSession() as session:
-            try:
-                url, headers, timeout, method, payload = self._prepare_request(
-                    item)
-                async with await self._send_request(session, url, headers, timeout, method, payload) as response:
-                    await asyncio.sleep(1)
-                    response.raise_for_status()
-                    data = await response.json()
-                    result, _ = self._process_response(data)
-                    return result
-            except (aiohttp.ClientResponseError, asyncio.TimeoutError) as e:
-                print(f"Error occurred for {item}: {e}. Retrying...")
-                await asyncio.sleep(5)
-
-    async def _fetch_item_with_pagination(self, item: str, cursor: Optional[str]) -> Any:
-        async with aiohttp.ClientSession() as session:
-            while True:
-                try:
-                    url, headers, timeout, method, payload = self._prepare_request(
-                        item, cursor)
-                    async with self._send_request(session, url, headers, timeout, method, payload) as response:
-                        await asyncio.sleep(1)
-                        response.raise_for_status()
-                        data = await response.json()
-                        result, next_cursor = self._process_response(data)
-
-                        if next_cursor is None:
-                            return result
-
-                        cursor = next_cursor
-                except (aiohttp.ClientResponseError, asyncio.TimeoutError) as e:
-                    print(f"Error occurred for {item}: {e}. Retrying...")
-                    await asyncio.sleep(5)
-
-    @abstractmethod
-    def _prepare_request(self, item: str, cursor: Optional[str] = None) -> tuple:
+    @abc.abstractmethod
+    def fetch_data(self):
         pass
 
-    @abstractmethod
-    def _process_response(self, data: Dict[str, Any]) -> tuple:
+    @abc.abstractmethod
+    def extract_data(self, data):
         pass
 
-    async def _send_request(self, session, url, headers, timeout, method, payload):
-        print(f"Sending {method} request to {url}")
-        if method == "GET":
-            return await session.get(url, headers=headers, timeout=timeout)
-        elif method == "POST":
-            return await session.post(url, headers=headers, json=payload, timeout=timeout)
 
+class SyncFetcher(ABC):
+    def fetch_data(self, url, headers=None, timeout=10):
+        response = requests.get(url, headers=headers, timeout=timeout)
+        response.raise_for_status()
+        return response.json()
 
-class SearchcasterFetcher(BatchFetcher):
-    def _prepare_request(self, username: str, cursor: Optional[str] = None) -> tuple:
-        url = f'{self.base_url}?username={username}'
-        headers = None
-        timeout = aiohttp.ClientTimeout(total=10)
-        method = "GET"
-        payload = None
-        return url, headers, timeout, method, payload
+    def fetch_all_data(self):
+        all_data = []
+        cursor = None
 
-    def _process_response(self, data: Dict[str, Any]) -> tuple:
-        if data:
-            return data[0], None
-        else:
-            raise ValueError(f"No results found.")
-
-
-class WarpcastReactionFetcher(BatchFetcher):
-    def __init__(self, base_url: str, bearer_token: str, batch_size: int = 10):
-        super().__init__(base_url, batch_size)
-        self.bearer_token = bearer_token
-
-    def _prepare_request(self, cast_hash: str, cursor: Optional[str]) -> tuple:
-        url = f'{self.base_url}?castHash={cast_hash}&limit=100'
-        if cursor:
-            url += f'&cursor={cursor}'
-        headers = {"Authorization": f"Bearer {self.bearer_token}"}
-        timeout = aiohttp.ClientTimeout(total=10)
-        return url, headers, timeout
-
-    def _process_response(self, data: Dict[str, Any]) -> tuple:
-        reactions = data['result']['reactions']
-        next_cursor = data.get('next', {}).get('cursor')
-        return reactions, next_cursor
-
-
-class AlchemyFetcher(BatchFetcher):
-    def __init__(self, base_url: str, api_key: str, batch_size: int = 10):
-        super().__init__(base_url, batch_size)
-        self.api_key = api_key
-
-    def _prepare_request(self, item: str, cursor: Optional[str]) -> tuple:
-        url = f"{self.base_url}{self.api_key}"
-        headers = {
-            "accept": "application/json",
-            "content-type": "application/json"
-        }
-        timeout = aiohttp.ClientTimeout(total=10)
-
-        from_block = cursor if cursor else "0x0"
-        payload = {
-            "id": 1,
-            "jsonrpc": "2.0",
-            "method": "alchemy_getAssetTransfers",
-            "params": [
-                {
-                    "fromBlock": from_block,
-                    "toBlock": "latest",
-                    "toAddress": item,
-                    "category": ["erc721", "erc1155", "erc20", "specialnft", "external"],
-                    "withMetadata": True,
-                    "excludeZeroValue": True,
-                    "maxCount": "0x3e8"
-                }
-            ]
-        }
-
-        return url, headers, timeout, payload
-
-    async def _fetch_item_with_pagination(self, item: str, cursor: Optional[str]) -> Any:
-        transactions = []
         while True:
-            url, headers, timeout, payload = self._prepare_request(
-                item, cursor)
+            batch_data, cursor = self.fetch_batch(cursor)
+            all_data.extend(batch_data)
 
-            async with aiohttp.ClientSession() as session:
-                while True:
-                    try:
-                        async with session.post(url, json=payload, headers=headers, timeout=timeout) as response:
-                            await asyncio.sleep(1)
-                            response.raise_for_status()
-                            data = await response.json()
-                            result, next_cursor = self._process_response(data)
+            if cursor is None:
+                break
+            else:
+                time.sleep(1)  # add a delay to avoid hitting rate limit
 
-                            transactions.extend(result["transactions"])
+        return all_data
 
-                            if next_cursor is None:
-                                return transactions
+    @abstractmethod
+    def fetch_batch(self, cursor):
+        pass
 
-                            cursor = next_cursor
-                    except (aiohttp.ClientResponseError, asyncio.TimeoutError) as e:
-                        print(f"Error occurred for {item}: {e}. Retrying...")
-                        await asyncio.sleep(5)
+    @abstractmethod
+    def extract_data(self, data):
+        pass
 
-    def _process_response(self, data: Dict[str, Any]) -> tuple:
-        transfers = data["result"]["transfers"]
-        page_key = data.get("result", {}).get(
-            "pageKey") if data.get("result") else None
-        return {"transactions": transfers, "page_key": page_key}, page_key
+
+class AsyncFetcher(ABC):
+    @abstractmethod
+    async def fetch_data(self, url: str, headers: Optional[Dict[str, str]] = None):
+        pass
+
+    @abstractmethod
+    async def extract_data(self, data: Any):
+        pass
+
+
+class SearchcasterFetcher(AsyncFetcher):
+    async def fetch_data(self, url: str, headers: Optional[Dict[str, str]] = None):
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=headers) as response:
+                response.raise_for_status()
+                return await response.json()
+
+    async def fetch_single_user(self, username: str) -> dict:
+        url = f'https://searchcaster.xyz/api/profiles?username={username}'
+        print(f"Fetching {username} from {url}")
+
+        while True:
+            try:
+                response_data = await self.fetch_data(url)
+                if response_data:
+                    return response_data[0]
+                else:
+                    raise ValueError(
+                        f"No results found for username {username}")
+            except (aiohttp.ClientResponseError, asyncio.TimeoutError) as e:
+                print(f"Error occurred for {username}: {e}. Retrying...")
+                await asyncio.sleep(5)  # Wait for 5 seconds before retrying
+
+    async def fetch_users(self, usernames):
+        tasks = [asyncio.create_task(self.fetch_single_user(
+            username)) for username in usernames]
+        users = await asyncio.gather(*tasks)
+        return users
+
+    async def extract_data(self, data):
+        return {
+            'fid': data['body']['id'],
+            'farcaster_address': data['body']['address'],
+            'external_address': data['connectedAddress'],
+            'registered_at': data['body']['registeredAt']
+        }
+
+    def get_clean_models(self, user_data) -> List[User]:
+        update_data = []
+        for user_data in user_data:
+            # if farcaster address is not None
+            # if farcaster address is not None and registered_at is not 0
+            if user_data['farcaster_address'] is not None and user_data['registered_at'] != 0:
+                update_data.append({
+                    'fid': user_data['fid'],
+                    'farcaster_address': user_data['farcaster_address'],
+                    'external_address': user_data['external_address'],
+                    'registered_at': user_data['registered_at'],
+                })
+        return update_data
+
+
+class WarpcastUserFetcher(SyncFetcher):
+    def __init__(self, key):
+        self.key = key
+
+    def fetch_batch(self, cursor=None, limit=1000):
+        url = f"https://api.warpcast.com/v2/recent-users?cursor={cursor}&limit={limit}" if cursor else f"https://api.warpcast.com/v2/recent-users?limit={limit}"
+        print(f"Fetching from {url}")
+        json_data = self.fetch_data(
+            url, headers={"Authorization": "Bearer " + self.key})
+        return json_data["result"]['users'], json_data.get("next", {}).get('cursor') if json_data.get("next") else None
+
+    def extract_data(self, user):
+        location_data = user.get('profile', {}).get('location', {})
+        location = Location(
+            id=location_data.get('placeId', ''),
+            description=location_data.get('description', '')
+        )
+
+        user_data = User(
+            fid=user['fid'],
+            username=user['username'],
+            display_name=user['displayName'],
+            pfp_url=user['pfp']['url'] if 'pfp' in user else '',
+            bio_text=user.get('profile', {}).get('bio', {}).get('text', ''),
+            following_count=user.get('followingCount', 0),
+            follower_count=user.get('followerCount', 0),
+            location_id=location.id,
+            verified=int(user['pfp']['verified']
+                         ) if 'pfp' in user and 'verified' in user['pfp'] else 0,
+            farcaster_address="",  # Update this value as needed
+            registered_at=-1  # Update this value as needed
+        )
+
+        return user_data, location if location.id else None
+
+    def get_clean_models(self, users) -> Tuple[List[User], List[Location]]:
+        user_data = [self.extract_data(user) for user in users]
+
+        user_list = [data[0] for data in user_data]
+        location_list = [data[1] for data in user_data if data[1]]
+
+        # Filter duplicates and remove None for locations
+        location_list = list(
+            {location.id: location for location in location_list}.values())
+
+        return user_list, location_list
+
+
+# class WarpcastCastFetcher(SyncFetcher):
+#     def __init__(self, key):
+#         self.key = key
+
+#     def fetch_batch(self, cursor=None, limit=1000):
+#         url = f"https://api.warpcast.com/v2/recent-casts?cursor={cursor}&limit={limit}" if cursor else f"https://api.warpcast.com/v2/recent-casts?limit={limit}"
+#         print(f"Fetching from {url}")
+#         json_data = self.fetch_data(
+#             url, headers={"Authorization": "Bearer " + self.key})
+#         return json_data["result"]['casts'], json_data.get("next", {}).get('cursor') if json_data.get("next") else None
+
+#     def extract_data(self, cast):
+#         return Cast(
+#             hash=cast['hash'],
+#             thread_hash=cast['threadHash'],
+#             text=cast['text'],
+#             timestamp=cast['timestamp'],
+#             author_fid=cast['author']['fid'],
+#             parent_hash=cast.get('parentHash', None)
+#         )

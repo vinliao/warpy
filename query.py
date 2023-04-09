@@ -61,7 +61,12 @@ def execute_natural_language_query(query: str) -> Optional[pl.DataFrame]:
     initial_prompt_raw = """
     Your job is to turn user queries (in natural language) to SQL. Only return the SQL and nothing else. Don't explain, don't say "here's your query." Just give the SQL. Say "Yes." if you understand.
 
-    Timestamp is in unix millisecond format, anything timestamp related must be multiplied by 1000. The database is in SQLite, adjust accordingly. Here are the schema:
+    Things to remember:
+    - Timestamp is in unix millisecond format, anything timestamp related must be multiplied by 1000. 
+    - If necessary, use subquery. 
+    - The database is in SQLite, adjust accordingly. 
+    
+    Here are the schema:
     """
 
     system_prompt = SystemMessage(

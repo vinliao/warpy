@@ -6,7 +6,7 @@ import time
 from utils.models import User, Location, Base
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.engine import Engine
-from utils.fetcher import WarpcastUserFetcher, SearchcasterFetcher
+from utils.fetcher_new import WarpcastUserFetcher, SearchcasterFetcher
 
 load_dotenv()
 warpcast_hub_key = os.getenv("WARPCAST_HUB_KEY")
@@ -160,13 +160,20 @@ def save_bulk_data(engine, user_list, location_list):
 
 
 async def main(engine: Engine):
-    warpcast_user_fetcher = WarpcastUserFetcher(warpcast_hub_key)
-    warpcast_users = warpcast_user_fetcher.fetch_all_data()
-    user_list, location_list = warpcast_user_fetcher.process_users(
-        warpcast_users)
+    # warpcast_user_fetcher = WarpcastUserFetcher(warpcast_hub_key)
+    # warpcast_users = warpcast_user_fetcher.fetch_data()
+    # user_list, location_list = warpcast_user_fetcher.get_models(
+    #     warpcast_users)
 
-    create_tables(engine)
-    save_bulk_data(engine, user_list, location_list)
+    # print(location_list)
+
+    usernames = ['farcaster', 'v', 'dwr']
+    searchcaster_fetcher = SearchcasterFetcher()
+    data = await searchcaster_fetcher.fetch_data(usernames)
+    print(data)
+
+    # create_tables(engine)
+    # save_bulk_data(engine, user_list, location_list)
 
     # # with sessionmaker(bind=engine)() as session:
     # #     new_users = session.query(User).filter(

@@ -167,10 +167,16 @@ async def main(engine: Engine):
 
     # print(location_list)
 
-    usernames = ['farcaster', 'v', 'dwr']
-    searchcaster_fetcher = SearchcasterFetcher()
-    data = await searchcaster_fetcher.fetch_data(usernames)
-    print(data)
+    with sessionmaker(bind=engine)() as session:
+        users = session.query(User).limit(3).all()
+        usernames = [user.username for user in users]
+        searchcaster_fetcher = SearchcasterFetcher()
+        user_data_list = await searchcaster_fetcher.fetch_data(usernames)
+        new_users = searchcaster_fetcher.get_models(users, user_data_list)
+
+        # turn new users todict
+        new_users_dict = [user.__dict__ for user in new_users]
+        print(new_users_dict)
 
     # create_tables(engine)
     # save_bulk_data(engine, user_list, location_list)

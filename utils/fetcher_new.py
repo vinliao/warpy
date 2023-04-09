@@ -138,16 +138,20 @@ class SearchcasterFetcher(BaseFetcher):
             'registered_at': data['body']['registeredAt']
         }
 
-    def get_models(self, user_data) -> List[User]:
-        update_data = []
-        for user_data in user_data:
-            # if farcaster address is not None
-            # if farcaster address is not None and registered_at is not 0
-            if user_data['farcaster_address'] is not None and user_data['registered_at'] != 0:
-                update_data.append({
-                    'fid': user_data['fid'],
-                    'farcaster_address': user_data['farcaster_address'],
-                    'external_address': user_data['external_address'],
-                    'registered_at': user_data['registered_at'],
-                })
-        return update_data
+    def get_models(self, users: List[User], user_data_list) -> List[User]:
+        updated_users = []
+
+        extracted_user_data = [self._extract_data(
+            user_data) for user_data in user_data_list]
+        user_data_dict = {
+            user_data['fid']: user_data for user_data in extracted_user_data}
+
+        for user in users:
+            user_data = user_data_dict.get(user.fid)
+            if user_data and user_data['farcaster_address'] is not None and user_data['registered_at'] != 0:
+                user.farcaster_address = user_data['farcaster_address']
+                user.external_address = user_data['external_address']
+                user.registered_at = user_data['registered_at']
+                updated_users.append(user)
+
+        return updated_users

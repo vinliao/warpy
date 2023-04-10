@@ -6,6 +6,7 @@ from sqlalchemy import func
 from datetime import datetime
 from sqlalchemy.engine import Engine
 from utils.fetcher import AlchemyTransactionFetcher
+from utils.utils import save_objects
 
 load_dotenv()
 
@@ -76,4 +77,4 @@ async def main(engine: Engine):
         fetcher = AlchemyTransactionFetcher(key=os.getenv('ALCHEMY_API_KEY'))
         data = await fetcher.fetch_data(addresses_string)
         transactions = fetcher.get_models(data)
-        print(transactions)
+        save_objects(session, transactions)

@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Tuple, List, Any, Dict, Optional
+from typing import Tuple, List, Any, Dict, Optional, Union
 import time
 import requests
 from utils.models import Reaction, Location, User, Cast, ExternalAddress, EthTransaction, ERC1155Metadata
@@ -449,9 +449,8 @@ class AlchemyTransactionFetcher(BaseFetcher):
 
         return transactions
 
-    def get_models(self, transactions: List[Dict[str, Any]]) -> Tuple[List[EthTransaction], List[List[ERC1155Metadata]]]:
-        eth_transactions = []
-        erc1155_metadatas = []
+    def get_models(self, transactions: List[Dict[str, Any]]) -> List[Union[EthTransaction, ERC1155Metadata]]:
+        models = []
         for transaction in transactions:
             address = transaction.get('to') or transaction.get('from')
             if address not in self.addresses:
@@ -459,11 +458,10 @@ class AlchemyTransactionFetcher(BaseFetcher):
 
             eth_transaction, erc1155_metadata_objs = self._extract_data(
                 transaction, address)
-            eth_transactions.append(eth_transaction)
-            if erc1155_metadata_objs:
-                erc1155_metadatas.append(erc1155_metadata_objs)
+            models.append(eth_transaction)
+            models.extend(erc1155_metadata_objs)
 
-        return eth_transactions, erc1155_metadatas
+        return models
 
     def _extract_data(self, transaction: Dict[str, Any], address: str) -> Tuple[EthTransaction, List[ERC1155Metadata]]:
         eth_transaction = EthTransaction(

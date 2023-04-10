@@ -4,12 +4,7 @@ from utils.models import ExternalAddress, User
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.engine import Engine
 from utils.fetcher import EnsdataFetcher
-
-
-def save_ens(session: Session, users: List[ExternalAddress]):
-    for user in users:
-        session.merge(user)
-    session.commit()
+from utils.utils import save_objects
 
 
 def get_farcaster_users(session: Session) -> List[User]:
@@ -31,4 +26,4 @@ async def main(engine: Engine):
         for i in range(0, len(addresses), batch_size):
             batch = addresses[i:i+batch_size]
             data = await fetcher.fetch_data(batch)
-            save_ens(session, fetcher.get_models(data))
+            save_objects(session, fetcher.get_models(data))

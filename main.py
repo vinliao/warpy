@@ -17,9 +17,13 @@ from utils.query import (
     execute_natural_language_query,
     execute_advanced_query
 )
+from utils.models import Base
 
 from sqlalchemy import create_engine
 engine = create_engine('sqlite:///datasets/datasets.db')
+
+Base.metadata.create_all(engine)
+
 
 load_dotenv()
 warpcast_hub_key = os.getenv('WARPCAST_HUB_KEY')

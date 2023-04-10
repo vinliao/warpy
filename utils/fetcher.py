@@ -1,11 +1,10 @@
 from abc import ABC, abstractmethod
-from typing import Tuple, List
+from typing import Tuple, List, Any, Dict, Optional
 import time
 import requests
 from utils.models import Reaction, Location, User, Cast
 import asyncio
 import aiohttp
-from typing import List, Dict, Optional, Any
 
 
 class BaseFetcher(ABC):
@@ -44,6 +43,7 @@ class BaseFetcher(ABC):
         :param timeout: Optional time limit in seconds for the request to complete.
         :return: Parsed JSON response.
         """
+        print(f"Fetching from {url}")
         response = requests.get(url, headers=headers, timeout=timeout)
         response.raise_for_status()
         return response.json()
@@ -58,6 +58,7 @@ class BaseFetcher(ABC):
         :return: Parsed JSON response.
         """
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout)) as session:
+            print(f"Fetching from {url}")
             async with session.get(url, headers=headers) as response:
                 response.raise_for_status()
                 return await response.json()
@@ -133,7 +134,6 @@ class WarpcastUserFetcher(BaseFetcher):
         :return: A tuple containing a list of dictionaries with user data and the next cursor, if any.
         """
         url = f"https://api.warpcast.com/v2/recent-users?cursor={cursor}&limit={limit}" if cursor else f"https://api.warpcast.com/v2/recent-users?limit={limit}"
-        print(f"Fetching from {url}")
         json_data = self._make_request(
             url, headers={"Authorization": "Bearer " + self.key})
         return json_data["result"]['users'], json_data.get("next", {}).get('cursor') if json_data.get("next") else None
@@ -213,7 +213,6 @@ class SearchcasterFetcher(BaseFetcher):
         :return: A dictionary containing user data, or None if not found.
         """
         url = f'https://searchcaster.xyz/api/profiles?username={username}'
-        print(f"Fetching {username} from {url}")
 
         response_data = await self._make_async_request_with_retry(url)
         return response_data[0] if response_data else None
@@ -257,3 +256,105 @@ class SearchcasterFetcher(BaseFetcher):
                 updated_users.append(user)
 
         return updated_users
+
+
+class WarpcastReactionFetcher(BaseFetcher):
+    """
+    WarpcastReactionFetcher is a concrete implementation of the BaseFetcher.
+    It fetches reaction data from the Warpcast API.
+    """
+
+    def __init__(self, key: str, n: int = 10):
+        """
+        Initializes a WarpcastReactionFetcher object.
+        :param key: str, The Warpcast API key to use for fetching data.
+        :param n: int, The number of reactions to fetch for each cast.
+        """
+        self.warpcast_hub_key = key
+        self.n = n
+
+    async def fetch_data(self, cast_hashes: List[str]) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Fetches reaction data from the Warpcast API for a list of cast hashes.
+        :param cast_hashes: list, A list of cast hashes to fetch data for.
+        :return: A dictionary containing a list of reactions for each cast hash.
+        """
+        reactions = await self._get_cast_reactions_async(cast_hashes, self.warpcast_hub_key, self.n)
+        return reactions
+
+    def get_models(self, reactions: Dict[str, List[Dict[str, Any]]]) -> List[Reaction]:
+        """
+        Processes raw reaction data and returns a list of Reaction model objects.
+        :param reactions: dict, A dictionary containing a list of reactions for each cast hash.
+        :return: A list of Reaction model objects.
+        """
+        extracted_reactions = [
+            self._extract_data(reaction)
+            for reaction_list in reactions.values()
+            for reaction in reaction_list
+        ]
+        return extracted_reactions
+
+    def _extract_data(self, data: Dict[str, Any]) -> Reaction:
+        """
+        Extracts relevant reaction data from a raw reaction dictionary.
+        :param data: dict, Raw reaction data from the Warpcast API.
+        :return: A Reaction model object.
+        """
+        return Reaction(
+            reaction_type=data['type'],
+            hash=data['hash'],
+            timestamp=data['timestamp'],
+            target_hash=data['castHash'],
+            author_fid=data['reactor']['fid'],
+        )
+
+    async def _get_cast_reactions_async(self, cast_hashes: List[str], warpcast_hub_key: str, n: int) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Fetches reaction data from the Warpcast API for a list of cast hashes.
+        :param cast_hashes: list, A list of cast hashes to fetch data for.
+        :param warpcast_hub_key: str, The Warpcast API key to use for fetching data.
+        :param n: int, The number of reactions to fetch for each cast.
+        :return: A dictionary containing a list of reactions for each cast hash.
+        """
+        headers = {"Authorization": f"Bearer {warpcast_hub_key}"}
+        reactions = {}
+        for i in range(0, len(cast_hashes), n):
+            tasks = []
+            for cast_hash in cast_hashes[i:i + n]:
+                url = f"https://api.warpcast.com/v2/cast-reactions?castHash={cast_hash}&limit=100"
+                tasks.append(self._fetch_reactions(url, headers))
+
+            responses = await asyncio.gather(*tasks)
+            for cast_hash, response_data in zip(cast_hashes[i:i + n], responses):
+                if response_data is not None and response_data != []:
+                    reactions[cast_hash] = response_data
+
+        return reactions
+
+    async def _fetch_reactions(self, url: str, headers: Dict[str, str]) -> List[Dict[str, Any]]:
+        """
+        Fetches reaction data from the Warpcast API for a single cast hash.
+        :param url: str, The URL to fetch data from.
+        :param headers: dict, The headers to use for the request.
+        :return: A list of reaction data.
+        """
+        reactions = []
+        cursor = None
+        while True:
+            try:
+                url_with_cursor = f"{url}&cursor={cursor}" if cursor else url
+
+                data = await self._make_async_request_with_retry(url_with_cursor, headers=headers)
+
+                reactions.extend(data['result']['reactions'])
+
+                cursor = data.get('next', {}).get('cursor')
+                if cursor is None:
+                    break
+
+            except ValueError as e:
+                print(f"Error occurred for {url}: {e}. Retrying...")
+                await asyncio.sleep(5)
+
+        return reactions

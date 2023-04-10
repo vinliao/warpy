@@ -523,3 +523,83 @@ class AlchemyTransactionFetcher(BaseFetcher):
             payload['params'][0]['pageKey'] = page_key
 
         return self.base_url, headers, payload
+
+
+class WarpcastCastFetcher(BaseFetcher):
+    """
+    WarpcastCastFetcher is a concrete implementation of the BaseFetcher.
+    It fetches recent cast data from the Warpcast API.
+    """
+
+    def __init__(self, key: str):
+        """
+        Initializes WarpcastCastFetcher with an API key.
+
+        :param key: str, API key to access the Warpcast API.
+        """
+        self.key = key
+
+    def fetch_data(self, timestamp: int) -> List[Dict[str, Any]]:
+        """
+        Fetches data for recent casts from the Warpcast API until a specific timestamp.
+
+        :param timestamp: int, UNIX timestamp in milliseconds.
+        :return: A list of dictionaries containing cast data.
+        """
+        all_data = []
+        cursor = None
+
+        while True:
+            batch_data, cursor = self._fetch_batch(cursor)
+            all_data.extend(batch_data)
+
+            # Check if the last fetched cast timestamp is less than the given timestamp
+            if all_data[-1]['timestamp'] < timestamp:
+                break
+
+            if cursor is None:
+                break
+            else:
+                time.sleep(1)  # add a delay to avoid hitting rate limit
+
+        # Remove casts with a timestamp less than the given timestamp
+        all_data = [cast for cast in all_data if cast['timestamp'] >= timestamp]
+        return all_data
+
+    def _extract_data(self, cast: Dict[str, Any]) -> Cast:
+        """
+        Extracts relevant cast data from a raw cast dictionary.
+
+        :param cast: dict, Raw cast data from the Warpcast API.
+        :return: A Cast object.
+        """
+        return Cast(
+            hash=cast['hash'],
+            thread_hash=cast['threadHash'],
+            text=cast['text'],
+            timestamp=cast['timestamp'],
+            author_fid=cast['author']['fid'],
+            parent_hash=cast.get('parentHash', None)
+        )
+
+    def get_models(self, casts: List[Dict[str, Any]]) -> List[Cast]:
+        """
+        Processes raw cast data and returns a list of Cast model objects.
+
+        :param casts: list, A list of dictionaries containing raw cast data.
+        :return: A list of Cast objects.
+        """
+        return [self._extract_data(cast) for cast in casts]
+
+    def _fetch_batch(self, cursor: Optional[str] = None, limit: int = 1000) -> Tuple[List[Dict[str, Any]], Optional[str]]:
+        """
+        Fetches a batch of cast data from the Warpcast API with pagination.
+
+        :param cursor: Optional, str, Cursor for pagination.
+        :param limit: int, Maximum number of casts to fetch in the batch.
+        :return: A tuple containing a list of dictionaries with cast data and the next cursor, if any.
+        """
+        url = f"https://api.warpcast.com/v2/recent-casts?cursor={cursor}&limit={limit}" if cursor else f"https://api.warpcast.com/v2/recent-casts?limit={limit}"
+        json_data = self._make_request(
+            url, headers={"Authorization": "Bearer " + self.key})
+        return json_data["result"]['casts'], json_data.get("next", {}).get('cursor') if json_data.get("next") else None

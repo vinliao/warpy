@@ -2,9 +2,10 @@ from abc import ABC, abstractmethod
 from typing import Tuple, List, Any, Dict, Optional
 import time
 import requests
-from utils.models import Reaction, Location, User, Cast, ExternalAddress
+from utils.models import Reaction, Location, User, Cast, ExternalAddress, EthTransaction, ERC1155Metadata
 import asyncio
 import aiohttp
+from datetime import datetime
 
 
 class BaseFetcher(ABC):
@@ -48,36 +49,49 @@ class BaseFetcher(ABC):
         response.raise_for_status()
         return response.json()
 
-    async def _make_async_request(self, url: str, headers: Dict[str, str] = None, timeout: int = 10) -> Any:
+    async def _make_async_request(self, url: str, headers: Dict[str, str] = None, data: Any = None, method: str = "GET", timeout: int = 10) -> Any:
         """
-        Makes an asynchronous GET request to the specified URL, and returns the JSON response.
+        Makes an asynchronous request to the specified URL, and returns the JSON response.
 
         :param url: The URL to send the request to.
         :param headers: Optional dictionary of headers to include in the request.
+        :param data: Optional data to include in the request body.
+        :param method: Optional HTTP method to use (default is "GET").
         :param timeout: Optional time limit in seconds for the request to complete.
         :return: Parsed JSON response.
         """
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout)) as session:
             print(f"Fetching from {url}")
-            async with session.get(url, headers=headers) as response:
-                response.raise_for_status()
-                return await response.json()
+            if method == "GET":
+                async with session.get(url, headers=headers) as response:
+                    response.raise_for_status()
+                    return await response.json()
+            elif method == "POST":
+                async with session.post(url, headers=headers, json=data) as response:
+                    response.raise_for_status()
+                    return await response.json()
+            else:
+                raise ValueError(f"Invalid method: {method}")
 
-    async def _make_async_request_with_retry(self, url: str, max_retries: int = 3, delay: int = 5, headers: Dict[str, str] = None, timeout: int = 10) -> Optional[Any]:
+    async def _make_async_request_with_retry(self, url: str, max_retries: int = 3, delay: int = 5, headers: Dict[str, str] = None, method: str = "GET", data: Any = None, timeout: int = 10) -> Optional[Any]:
         """
-        Makes an asynchronous GET request to the specified URL with a retry mechanism.
+        Makes an asynchronous request to the specified URL with a retry mechanism.
 
         :param url: The URL to send the request to.
         :param max_retries: Maximum number of times to retry the request in case of a failure.
         :param delay: Time delay in seconds between retries.
         :param headers: Optional dictionary of headers to include in the request.
+        :param method: HTTP method to use for the request (GET or POST).
+        :param data: Optional data to include in the request body for POST requests.
         :param timeout: Optional time limit in seconds for the request to complete.
         :return: Parsed JSON response, or None if all retries fail.
         """
         retries = 0
         while retries < max_retries:
             try:
-                response_data = await self._make_async_request(url, headers=headers, timeout=timeout)
+                response = await self._make_async_request(url, headers=headers, data=data, method=method, timeout=timeout)
+
+                response_data = response
                 if response_data:
                     return response_data
                 else:
@@ -395,3 +409,119 @@ class EnsdataFetcher(BaseFetcher):
             email=data.get('email'),
             discord=data.get('discord')
         )
+
+
+class AlchemyTransactionFetcher(BaseFetcher):
+    def __init__(self, key: str):
+        self.base_url = f"https://eth-mainnet.g.alchemy.com/v2/{key}"
+        self.transactions = []
+        self.addresses = []
+
+    async def fetch_data(self, addresses: List[str]):
+        self.addresses = addresses
+        latest_block_of_user = self._get_latest_block_of_user()
+
+        # Fetch data concurrently using asyncio.gather
+        tasks = [self._fetch_data_for_address(
+            address, latest_block_of_user) for address in self.addresses]
+        all_transactions = await asyncio.gather(*tasks)
+
+        # Flatten the list of transactions and update self.transactions
+        self.transactions = [
+            transaction for sublist in all_transactions for transaction in sublist]
+
+        return self.transactions
+
+    async def _fetch_data_for_address(self, address: str, latest_block_of_user: int):
+        transactions = []
+        page_key = None
+        while True:
+            url, headers, payload = self._build_request_url_and_headers(
+                latest_block_of_user, address, page_key)
+            response_data = await self._make_async_request_with_retry(url, headers=headers, data=payload, method="POST")
+            if not response_data:
+                break
+
+            page_key = response_data.get('result', {}).get('pageKey')
+            transactions += response_data['result']['transfers']
+            if page_key is None:
+                break
+
+        return transactions
+
+    def get_models(self, transactions: List[Dict[str, Any]]) -> Tuple[List[EthTransaction], List[List[ERC1155Metadata]]]:
+        eth_transactions = []
+        erc1155_metadatas = []
+        for transaction in transactions:
+            address = transaction.get('to') or transaction.get('from')
+            if address not in self.addresses:
+                continue
+
+            eth_transaction, erc1155_metadata_objs = self._extract_data(
+                transaction, address)
+            eth_transactions.append(eth_transaction)
+            if erc1155_metadata_objs:
+                erc1155_metadatas.append(erc1155_metadata_objs)
+
+        return eth_transactions, erc1155_metadatas
+
+    def _extract_data(self, transaction: Dict[str, Any], address: str) -> Tuple[EthTransaction, List[ERC1155Metadata]]:
+        eth_transaction = EthTransaction(
+            hash=transaction['hash'],
+            address_external=address,
+            timestamp=int(datetime.strptime(
+                transaction['metadata']['blockTimestamp'], '%Y-%m-%dT%H:%M:%S.%fZ').timestamp()) * 1000,
+            block_num=int(transaction['blockNum'], 16),
+            from_address=transaction['from'],
+            to_address=transaction['to'],
+            value=transaction['value'],
+            erc721_token_id=transaction.get('erc721TokenId'),
+            token_id=transaction.get('tokenId'),
+            asset=transaction.get('asset'),
+            category=transaction.get('category', "unknown")
+        )
+
+        erc1155_metadata_list = transaction.get('erc1155Metadata') or []
+        erc1155_metadata_objs = []
+
+        for metadata in erc1155_metadata_list:
+            erc1155_metadata = ERC1155Metadata(
+                eth_transaction_hash=transaction['hash'],
+                token_id=metadata['tokenId'],
+                value=metadata['value']
+            )
+            erc1155_metadata_objs.append(erc1155_metadata)
+
+        return eth_transaction, erc1155_metadata_objs
+
+    def _get_latest_block_of_user(self) -> int:
+        # Replace this with your session/query to get the latest block of the user
+        return 0
+
+    def _build_request_url_and_headers(self, from_block: int, address: str, page_key: str = None) -> Tuple[str, Dict[str, str], Dict[str, Any]]:
+        headers = {
+            "accept": "application/json",
+            "content-type": "application/json"
+        }
+
+        payload = {
+            "id": 1,
+            "jsonrpc": "2.0",
+            "method": "alchemy_getAssetTransfers",
+            "params": [
+                {
+                    "fromBlock": f"0x{from_block:x}",
+                    "toBlock": "latest",
+                    "toAddress": address,
+                    "category": ["erc721", "erc1155", "erc20", "specialnft", "external"],
+                    "withMetadata": True,
+                    "excludeZeroValue": True,
+                    "maxCount": "0x3e8",
+                }
+            ]
+        }
+
+        if page_key:
+            payload['params'][0]['pageKey'] = page_key
+
+        return self.base_url, headers, payload

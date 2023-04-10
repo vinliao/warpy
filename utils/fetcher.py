@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Tuple, List, Any, Dict, Optional
 import time
 import requests
-from utils.models import Reaction, Location, User, Cast
+from utils.models import Reaction, Location, User, Cast, ExternalAddress
 import asyncio
 import aiohttp
 
@@ -63,7 +63,7 @@ class BaseFetcher(ABC):
                 response.raise_for_status()
                 return await response.json()
 
-    async def _make_async_request_with_retry(self, url: str, max_retries: int = 3, delay: int = 5, headers: Dict[str, str] = None, timeout: int = 10) -> Any:
+    async def _make_async_request_with_retry(self, url: str, max_retries: int = 3, delay: int = 5, headers: Dict[str, str] = None, timeout: int = 10) -> Optional[Any]:
         """
         Makes an asynchronous GET request to the specified URL with a retry mechanism.
 
@@ -72,7 +72,7 @@ class BaseFetcher(ABC):
         :param delay: Time delay in seconds between retries.
         :param headers: Optional dictionary of headers to include in the request.
         :param timeout: Optional time limit in seconds for the request to complete.
-        :return: Parsed JSON response.
+        :return: Parsed JSON response, or None if all retries fail.
         """
         retries = 0
         while retries < max_retries:
@@ -81,14 +81,15 @@ class BaseFetcher(ABC):
                 if response_data:
                     return response_data
                 else:
-                    raise ValueError(f"No results found for the URL: {url}")
+                    print(f"No results found for the URL: {url}. Retrying...")
             except (aiohttp.ClientResponseError, asyncio.TimeoutError) as e:
                 print(f"Error occurred for URL {url}. Retrying...")
-                await asyncio.sleep(delay)
-                retries += 1
+            await asyncio.sleep(delay)
+            retries += 1
 
-        raise RuntimeError(
+        print(
             f"Failed to fetch data from URL {url} after {max_retries} attempts.")
+        return None
 
 
 class WarpcastUserFetcher(BaseFetcher):
@@ -358,3 +359,39 @@ class WarpcastReactionFetcher(BaseFetcher):
                 await asyncio.sleep(5)
 
         return reactions
+
+
+class EnsdataFetcher(BaseFetcher):
+    async def fetch_data(self, addresses: List[str]) -> List[Dict[str, Any]]:
+        users = await self._get_users_from_ensdata(addresses)
+        return users
+
+    def get_models(self, users: List[Dict[str, Any]]) -> List[ExternalAddress]:
+        extracted_users = [
+            self._extract_data(user)
+            for user in users
+        ]
+        return extracted_users
+
+    async def _get_single_user_from_ensdata(self, address: str) -> Dict[str, Any]:
+        url = f'https://ensdata.net/{address}'
+        json_data = await self._make_async_request_with_retry(url, max_retries=3, delay=5, timeout=10)
+        return json_data if json_data else None
+
+    async def _get_users_from_ensdata(self, addresses: List[str]) -> List[Dict[str, Any]]:
+        tasks = [asyncio.create_task(self._get_single_user_from_ensdata(address))
+                 for address in addresses]
+        users = await asyncio.gather(*tasks)
+        return list(filter(None, users))
+
+    def _extract_data(self, data: Dict[str, Any]) -> ExternalAddress:
+        return ExternalAddress(
+            address=data.get('address'),
+            ens=data.get('ens'),
+            url=data.get('url'),
+            github=data.get('github'),
+            twitter=data.get('twitter'),
+            telegram=data.get('telegram'),
+            email=data.get('email'),
+            discord=data.get('discord')
+        )

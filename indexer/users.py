@@ -1,12 +1,10 @@
-from sqlalchemy.orm import aliased
 from dotenv import load_dotenv
 import os
-import requests
-import time
-from utils.models import User, Location, Base
-from sqlalchemy.orm import sessionmaker
+from utils.models import User
+from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.engine import Engine
 from utils.fetcher_new import WarpcastUserFetcher, SearchcasterFetcher
+from typing import List, Optional
 
 load_dotenv()
 warpcast_hub_key = os.getenv("WARPCAST_HUB_KEY")
@@ -25,20 +23,27 @@ def save_locations(session, location_list):
     session.commit()
 
 
-def update_users_warpcast(session, user_list):
+def get_user_by_fid(session: Session, fid: int) -> Optional[User]:
+    return session.query(User).filter_by(fid=fid).one_or_none()
+
+
+def update_existing_user(existing_user: User, user: User, preserved_fields_list: List[str]) -> None:
+    preserved_fields = {key: value for key, value in user.__dict__.items(
+    ) if key not in preserved_fields_list}
+    existing_user.__dict__.update(preserved_fields)
+
+
+def update_users_warpcast(session: Session, user_list: List[User]) -> None:
     preserved_fields_list = [
         'farcaster_address', 'registered_at', 'external_address', '_sa_instance_state']
-    for user in user_list:
-        existing_user = session.query(User).filter_by(
-            fid=user.fid).one_or_none()
 
+    for user in user_list:
+        existing_user = get_user_by_fid(session, user.fid)
         if existing_user:
-            preserved_fields = {
-                key: value for key, value in user.__dict__.items() if key not in preserved_fields_list}
-            session.query(User).filter_by(
-                fid=user.fid).update(preserved_fields)
+            update_existing_user(existing_user, user, preserved_fields_list)
         else:
             session.add(user)
+
     session.commit()
 
 
@@ -61,7 +66,11 @@ async def main(engine: Engine):
         users = session.query(User).filter_by(registered_at=-1).all()
         usernames = [user.username for user in users]
         searchcaster_fetcher = SearchcasterFetcher()
-        user_data_list = await searchcaster_fetcher.fetch_data(usernames)
-        new_users = searchcaster_fetcher.get_models(users, user_data_list)
-        update_user_searchcaster(session, new_users)
+        batch_size = 50
+        for i in range(0, len(usernames), batch_size):
+            batch = usernames[i:i+batch_size]
+            user_data_list = await searchcaster_fetcher.fetch_data(batch)
+            new_users = searchcaster_fetcher.get_models(users, user_data_list)
+            update_user_searchcaster(session, new_users)
+
         delete_unregistered_users(session)

@@ -3,7 +3,7 @@ import os
 from utils.models import User
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.engine import Engine
-from utils.fetcher_new import WarpcastUserFetcher, SearchcasterFetcher
+from utils.fetcher import WarpcastUserFetcher, SearchcasterFetcher
 from typing import List, Optional
 
 load_dotenv()
@@ -54,7 +54,7 @@ def update_user_searchcaster(session, user_list):
 
 
 async def main(engine: Engine):
-    warpcast_user_fetcher = WarpcastUserFetcher(warpcast_hub_key)
+    warpcast_user_fetcher = WarpcastUserFetcher(key=warpcast_hub_key)
     warpcast_users = warpcast_user_fetcher.fetch_data()
     user_list, location_list = warpcast_user_fetcher.get_models(
         warpcast_users)

@@ -45,3 +45,6 @@ build/
 # Ignore all .sql files
 *.sql
 *.csv
+
+# Ignore all vcr.py files
+/cassettes

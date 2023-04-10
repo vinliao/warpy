@@ -4,7 +4,7 @@ import sqlite3
 import pyarrow.parquet as pq
 import tarfile
 import hashlib
-from package import *
+from packager.package import *
 
 
 def test_create_temporary_directory():

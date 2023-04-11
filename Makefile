@@ -6,8 +6,8 @@ install:
 	@echo "Environment setup complete. Run 'source venv/bin/activate' to activate the virtual environment."
 	. venv/bin/activate && python main.py download
 
-.PHONY: codestyle
-codestyle:
+.PHONY: format
+format:
 	. venv/bin/activate && \
 	autoflake --remove-unused-variables --remove-all-unused-imports --recursive --exclude venv --in-place . && \
 	isort . && \

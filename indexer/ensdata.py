@@ -12,7 +12,7 @@ def get_farcaster_users(session: Session) -> List[User]:
     return (
         session.query(User)
         .filter(
-            User.external_address != None,
+            User.external_address is not None,
             ~User.external_address.in_(session.query(ExternalAddress.address)),
         )
         .all()

@@ -125,8 +125,13 @@ class BaseFetcher(ABC):
                     return response_data
                 else:
                     print(f"No results found for the URL: {url}. Retrying...")
+
             except (aiohttp.ClientResponseError, asyncio.TimeoutError) as e:
-                print(f"Error occurred for URL {url}. Retrying...")
+                if e is not None:
+                    print(f"Error occurred for URL {url}. Error: {e}. Retrying...")
+                else:
+                    print(f"Error occurred for URL {url}. Retrying...")
+
             await asyncio.sleep(delay)
             retries += 1
 

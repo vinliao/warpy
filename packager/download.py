@@ -5,7 +5,6 @@ import tarfile
 
 import pyarrow.parquet as pq
 import requests
-from pyarrow import parquet as pq
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 from tqdm import tqdm
@@ -64,7 +63,8 @@ def parquet_to_sqlite(engine: Engine, extracted_dir: str) -> None:
 
 
 def main(engine: Engine):
-    url = "https://pub-3916d8c82abb435eb70175747fdc2119.r2.dev/datasets.tar.gz"
+    # url = "https://pub-3916d8c82abb435eb70175747fdc2119.r2.dev/datasets.tar.gz"
+
     archive_path = "datasets.tar.gz"
     parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     extracted_dir = os.path.join(parent_dir, "datasets")

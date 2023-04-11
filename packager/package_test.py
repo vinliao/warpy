@@ -6,7 +6,12 @@ import tempfile
 
 import pyarrow.parquet as pq
 
-from packager.package import *
+from packager.package import (
+    compute_hash_of_archive,
+    convert_tables_to_parquet,
+    create_tar_gz_archive,
+    create_temporary_directory,
+)
 
 
 def test_create_temporary_directory():

@@ -4,7 +4,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy_utils import create_database, database_exists
 
-from utils.fetcher import EnsdataFetcher, ExternalAddress
+from utils.fetcher import EnsdataFetcher
 from utils.models import Base, ExternalAddress
 from utils.utils import save_objects
 

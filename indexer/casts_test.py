@@ -1,13 +1,15 @@
+import datetime
+import os
+
 import pytest
 import vcr
-from sqlalchemy import create_engine
-from utils.models import Base, Cast
-import datetime
 from dotenv import load_dotenv
-import os
-from utils.fetcher import WarpcastCastFetcher
-from utils.utils import save_casts_to_sqlite
+from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+
+from utils.fetcher import WarpcastCastFetcher
+from utils.models import Base, Cast
+from utils.utils import save_casts_to_sqlite
 
 load_dotenv()
 warpcast_hub_key = os.getenv("WARPCAST_HUB_KEY")

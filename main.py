@@ -1,34 +1,35 @@
-import os
 import asyncio
-from dotenv import load_dotenv, set_key
-import typer
+import os
 import time
 
-from indexer.users import main as user_indexer_main
+import typer
+from dotenv import load_dotenv, set_key
+from sqlalchemy import create_engine
+
 from indexer.casts import main as cast_indexer_main
+from indexer.ensdata import main as ensdata_indexer_main
 from indexer.eth import main as eth_indexer_main
 from indexer.reactions import main as reaction_indexer_main
-from indexer.ensdata import main as ensdata_indexer_main
-from packager.package import main as packager_main
+from indexer.users import main as user_indexer_main
 from packager.download import main as downloader_main
+from packager.package import main as packager_main
 from packager.upload import main as uploader_main
-from utils.query import (
-    execute_raw_sql,
-    execute_natural_language_query,
-    execute_advanced_query
-)
 from utils.models import Base
+from utils.query import (
+    execute_advanced_query,
+    execute_natural_language_query,
+    execute_raw_sql,
+)
 
-from sqlalchemy import create_engine
-engine = create_engine('sqlite:///datasets/datasets.db')
+engine = create_engine("sqlite:///datasets/datasets.db")
 
 Base.metadata.create_all(engine)
 
 
 load_dotenv()
-warpcast_hub_key = os.getenv('WARPCAST_HUB_KEY')
-openai_api_key = os.getenv('OPENAI_API_KEY')
-alchemy_api_key = os.getenv('ALCHEMY_API_KEY')
+warpcast_hub_key = os.getenv("WARPCAST_HUB_KEY")
+openai_api_key = os.getenv("OPENAI_API_KEY")
+alchemy_api_key = os.getenv("ALCHEMY_API_KEY")
 
 app = typer.Typer()
 
@@ -39,7 +40,7 @@ app.add_typer(env_app, name="env")
 
 
 def update_warpcast_key():
-    dotenv_path = '.env'
+    dotenv_path = ".env"
     global warpcast_hub_key
     print(f"Current Warpcast Hub key: {warpcast_hub_key}")
     new_warpcast_hub_key = typer.prompt("Enter your new Warpcast Hub key")
@@ -48,7 +49,7 @@ def update_warpcast_key():
 
 
 def update_openai_key():
-    dotenv_path = '.env'
+    dotenv_path = ".env"
     global openai_api_key
     print(f"Current OpenAI API key: {openai_api_key}")
     new_openai_api_key = typer.prompt("Enter your new OpenAI API key")
@@ -57,7 +58,7 @@ def update_openai_key():
 
 
 def update_alchemy_key():
-    dotenv_path = '.env'
+    dotenv_path = ".env"
     global alchemy_api_key
     print(f"Current Alchemy key: {alchemy_api_key}")
     new_alchemy_api_key = typer.prompt("Enter your new Alchemy API key")
@@ -107,7 +108,9 @@ def init_alchemy():
 def refresh_all_data():
     """Refresh all data in the DB."""
     if not warpcast_hub_key or not alchemy_api_key:
-        print("Error: you need to set the environment variables WARPCAST_HUB_KEY and ALCHEMY_API_KEY. Run `python main.py env all` to do so.")
+        print(
+            "Error: you need to set the environment variables WARPCAST_HUB_KEY and ALCHEMY_API_KEY. Run `python main.py env all` to do so."
+        )
         return
     asyncio.run(user_indexer_main())
     cast_indexer_main()
@@ -118,7 +121,9 @@ def refresh_all_data():
 def refresh_user_data():
     """Refresh user data."""
     if not warpcast_hub_key:
-        print("Error: you need to set the environment variable WARPCAST_HUB_KEY. Run `python main.py env warpcast` to do so.")
+        print(
+            "Error: you need to set the environment variable WARPCAST_HUB_KEY. Run `python main.py env warpcast` to do so."
+        )
         return
 
     asyncio.run(user_indexer_main(engine))
@@ -128,7 +133,9 @@ def refresh_user_data():
 def refresh_cast_data():
     """Refresh cast data."""
     if not warpcast_hub_key:
-        print("Error: you need to set the environment variable WARPCAST_HUB_KEY. Run `python main.py env warpcast` to do so.")
+        print(
+            "Error: you need to set the environment variable WARPCAST_HUB_KEY. Run `python main.py env warpcast` to do so."
+        )
         return
 
     cast_indexer_main(engine)
@@ -138,7 +145,9 @@ def refresh_cast_data():
 def refresh_reaction_data():
     """Refresh reactions data."""
     if not warpcast_hub_key:
-        print("Error: you need to set the environment variable WARPCAST_HUB_KEY. Run `python main.py env warpcast` to do so.")
+        print(
+            "Error: you need to set the environment variable WARPCAST_HUB_KEY. Run `python main.py env warpcast` to do so."
+        )
         return
 
     asyncio.run(reaction_indexer_main(engine))
@@ -148,7 +157,9 @@ def refresh_reaction_data():
 def refresh_eth_data():
     """Refresh onchain Ethereum data."""
     if not alchemy_api_key:
-        print("Error: you need to set the environment variable ALCHEMY_API_KEY. Run `python main.py env alchemy` to do so.")
+        print(
+            "Error: you need to set the environment variable ALCHEMY_API_KEY. Run `python main.py env alchemy` to do so."
+        )
         return
 
     asyncio.run(eth_indexer_main(engine))
@@ -180,13 +191,20 @@ def package():
 
 
 @app.command()
-def query(query: str = typer.Argument(None, help='Query Farcaster data with natural language.'),
-          raw: str = typer.Option(None, help='Query Farcaster data with SQL.'),
-          advanced: str = typer.Option(None, help='For testing purposes.'),
-          csv: bool = typer.Option(False, help='Save the result to a CSV file. Format: {unix_timestamp}.csv')):
-
+def query(
+    query: str = typer.Argument(
+        None, help="Query Farcaster data with natural language."
+    ),
+    raw: str = typer.Option(None, help="Query Farcaster data with SQL."),
+    advanced: str = typer.Option(None, help="For testing purposes."),
+    csv: bool = typer.Option(
+        False, help="Save the result to a CSV file. Format: {unix_timestamp}.csv"
+    ),
+):
     if not openai_api_key and raw is None:
-        print("Error: you need to set the environment variable OPENAI_API_KEY. Run `python main.py env openai` to do so.")
+        print(
+            "Error: you need to set the environment variable OPENAI_API_KEY. Run `python main.py env openai` to do so."
+        )
         return
 
     if raw:

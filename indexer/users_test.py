@@ -1,14 +1,14 @@
+import os
+
 import pytest
 import vcr
-from sqlalchemy import create_engine
-from utils.models import Base, User, Location
 from dotenv import load_dotenv
-import os
-from utils.fetcher import WarpcastUserFetcher, SearchcasterFetcher
+from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from utils.utils import save_objects, update_users_warpcast, get_user_by_fid
-import random
 
+from utils.fetcher import SearchcasterFetcher, WarpcastUserFetcher
+from utils.models import Base, Location, User
+from utils.utils import get_user_by_fid, save_objects, update_users_warpcast
 
 load_dotenv()
 warpcast_hub_key = os.getenv("WARPCAST_HUB_KEY")

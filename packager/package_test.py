@@ -1,9 +1,11 @@
-import os
-import tempfile
-import sqlite3
-import pyarrow.parquet as pq
-import tarfile
 import hashlib
+import os
+import sqlite3
+import tarfile
+import tempfile
+
+import pyarrow.parquet as pq
+
 from packager.package import *
 
 
@@ -17,8 +19,7 @@ def test_convert_tables_to_parquet_and_data_integrity():
     with tempfile.TemporaryDirectory() as tmpdirname:
         conn = sqlite3.connect(":memory:")
         cursor = conn.cursor()
-        cursor.execute(
-            "CREATE TABLE test (id INTEGER PRIMARY KEY, name TEXT);")
+        cursor.execute("CREATE TABLE test (id INTEGER PRIMARY KEY, name TEXT);")
         cursor.execute("INSERT INTO test (id, name) VALUES (1, 'Alice');")
         cursor.execute("INSERT INTO test (id, name) VALUES (2, 'Bob');")
 

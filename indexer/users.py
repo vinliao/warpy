@@ -1,11 +1,12 @@
-from dotenv import load_dotenv
 import os
-from utils.models import User
-from sqlalchemy.orm import sessionmaker
+
+from dotenv import load_dotenv
 from sqlalchemy.engine import Engine
-from utils.fetcher import WarpcastUserFetcher, SearchcasterFetcher
-from utils.utils import save_objects
-from utils.utils import update_users_warpcast
+from sqlalchemy.orm import sessionmaker
+
+from utils.fetcher import SearchcasterFetcher, WarpcastUserFetcher
+from utils.models import User
+from utils.utils import save_objects, update_users_warpcast
 
 load_dotenv()
 warpcast_hub_key = os.getenv("WARPCAST_HUB_KEY")

@@ -1,16 +1,15 @@
-from utils.utils import save_objects
-from utils.models import Base, ExternalAddress, User, Reaction
-from utils.fetcher import EnsdataFetcher
-from sqlalchemy_utils import create_database, database_exists
-from sqlalchemy.orm import declarative_base
-from sqlalchemy import create_engine
-import pytest
-import vcr
-from utils.fetcher import EnsdataFetcher, WarpcastReactionFetcher
-from sqlalchemy.orm import Session, sessionmaker
-from dotenv import load_dotenv
 import os
 
+import pytest
+import vcr
+from dotenv import load_dotenv
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy_utils import create_database, database_exists
+
+from utils.fetcher import WarpcastReactionFetcher
+from utils.models import Base, Reaction
+from utils.utils import save_objects
 
 load_dotenv()
 warpcast_hub_key = os.getenv("WARPCAST_HUB_KEY")

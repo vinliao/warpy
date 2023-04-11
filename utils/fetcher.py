@@ -1,19 +1,21 @@
-from abc import ABC, abstractmethod
-from typing import Tuple, List, Any, Dict, Optional, Union
-import time
-import requests
-from utils.models import (
-    Reaction,
-    Location,
-    User,
-    Cast,
-    ExternalAddress,
-    EthTransaction,
-    ERC1155Metadata,
-)
 import asyncio
-import aiohttp
+import time
+from abc import ABC, abstractmethod
 from datetime import datetime
+from typing import Any, Dict, List, Optional, Tuple, Union
+
+import aiohttp
+import requests
+
+from utils.models import (
+    Cast,
+    ERC1155Metadata,
+    EthTransaction,
+    ExternalAddress,
+    Location,
+    Reaction,
+    User,
+)
 
 
 class BaseFetcher(ABC):
@@ -27,21 +29,18 @@ class BaseFetcher(ABC):
         """
         Abstract method to be implemented by child classes to fetch data from the respective sources.
         """
-        pass
 
     @abstractmethod
     def get_models(self):
         """
         Abstract method to be implemented by child classes to return clean data models ready for insertion into the database.
         """
-        pass
 
     @abstractmethod
     def _extract_data(self):
         """
         Abstract method to be implemented by child classes to extract relevant data from the raw data fetched.
         """
-        pass
 
     def _make_request(
         self, url: str, headers: Dict[str, str] = None, timeout: int = 10

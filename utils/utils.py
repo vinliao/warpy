@@ -1,8 +1,9 @@
-from typing import List, TypeVar, Optional
-from sqlalchemy.orm import Session
 import datetime
-from utils.models import Cast
-from utils.models import User
+from typing import List, Optional, TypeVar
+
+from sqlalchemy.orm import Session
+
+from utils.models import Cast, User
 
 T = TypeVar("T")
 

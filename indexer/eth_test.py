@@ -1,13 +1,14 @@
-from utils.utils import save_objects
-from utils.models import Base
-from sqlalchemy_utils import create_database, database_exists
-from sqlalchemy import create_engine
+import os
+
 import pytest
 import vcr
-from utils.fetcher import ExternalAddress, AlchemyTransactionFetcher
+from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
-import os
-from utils.models import EthTransaction, ERC1155Metadata
+from sqlalchemy_utils import create_database, database_exists
+
+from utils.fetcher import AlchemyTransactionFetcher, ExternalAddress
+from utils.models import Base, ERC1155Metadata, EthTransaction
+from utils.utils import save_objects
 
 # Define a cassette library directory to store API response recordings
 my_vcr = vcr.VCR(

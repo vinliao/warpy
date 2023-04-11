@@ -1,33 +1,36 @@
+import hashlib
 import os
 import sqlite3
 import tarfile
-import hashlib
+from typing import List
+
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
-from typing import List
-import shutil
 
 
 def hash_models_py(file_path: str) -> str:
-    with open(file_path, 'rb') as f:
+    with open(file_path, "rb") as f:
         return hashlib.sha256(f.read()).hexdigest()[:4]
 
 
 def create_or_update_warpy_metadata(cursor: sqlite3.Cursor, models_hash: str) -> None:
-    cursor.execute("""
+    cursor.execute(
+        """
     CREATE TABLE IF NOT EXISTS warpy_metadata (
         id INTEGER PRIMARY KEY,
         models_hash TEXT NOT NULL
     );
-    """)
+    """
+    )
     cursor.execute("DELETE FROM warpy_metadata;")
     cursor.execute(
-        "INSERT INTO warpy_metadata (id, models_hash) VALUES (?, ?)", (1, models_hash))
+        "INSERT INTO warpy_metadata (id, models_hash) VALUES (?, ?)", (1, models_hash)
+    )
 
 
 def get_db_connection(parent_dir: str) -> sqlite3.Connection:
-    db_path = os.path.join(parent_dir, 'datasets', 'datasets.db')
+    db_path = os.path.join(parent_dir, "datasets", "datasets.db")
     return sqlite3.connect(db_path)
 
 
@@ -56,17 +59,19 @@ def get_all_tables(cursor: sqlite3.Cursor) -> List[str]:
     return [x[0] for x in cursor.fetchall()]
 
 
-def convert_tables_to_parquet(conn: sqlite3.Connection, tables: List[str], tmpdir: str) -> None:
+def convert_tables_to_parquet(
+    conn: sqlite3.Connection, tables: List[str], tmpdir: str
+) -> None:
     for table in tables:
         df = pd.read_sql_query(f"SELECT * FROM {table}", conn)
         pq.write_table(
             table=pa.Table.from_pandas(df),
-            where=os.path.join(tmpdir, f"{table}.parquet")
+            where=os.path.join(tmpdir, f"{table}.parquet"),
         )
 
 
 def create_tar_gz_archive(tmpdir: str, archive_name: str) -> None:
-    with tarfile.open(archive_name, 'w:gz') as tar:
+    with tarfile.open(archive_name, "w:gz") as tar:
         for root, dirs, files in os.walk(tmpdir):
             for file in files:
                 path = os.path.join(root, file)
@@ -74,7 +79,7 @@ def create_tar_gz_archive(tmpdir: str, archive_name: str) -> None:
 
 
 def compute_hash_of_archive(archive_name: str) -> str:
-    with open(archive_name, 'rb') as f:
+    with open(archive_name, "rb") as f:
         return hashlib.sha256(f.read()).hexdigest()
 
 
@@ -88,8 +93,8 @@ def delete_temporary_directory(tmpdir: str) -> None:
 
 
 def main():
-    parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-    models_file_path = os.path.join(parent_dir, 'models.py')
+    parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    models_file_path = os.path.join(parent_dir, "models.py")
     models_hash = hash_models_py(models_file_path)
 
     conn = get_db_connection(parent_dir)
@@ -98,13 +103,13 @@ def main():
     create_or_update_warpy_metadata(cursor, models_hash)
     conn.commit()
 
-    tmpdir = 'temp_parquet_files'
+    tmpdir = "temp_parquet_files"
     create_temporary_directory(tmpdir)
 
     tables = get_all_tables(cursor)
     convert_tables_to_parquet(conn, tables, tmpdir)
 
-    archive_name = 'datasets.tar.gz'
+    archive_name = "datasets.tar.gz"
     create_tar_gz_archive(tmpdir, archive_name)
 
     delete_temporary_directory(tmpdir)
@@ -113,10 +118,11 @@ def main():
     df = pd.read_sql_query("SELECT * FROM warpy_metadata", conn)
     pq.write_table(
         table=pa.Table.from_pandas(df),
-        where=os.path.join(tmpdir, "warpy_metadata.parquet")
+        where=os.path.join(tmpdir, "warpy_metadata.parquet"),
     )
 
     print(
-        f"Dataset latest cast timestamp: {get_latest_timestamp(cursor)}; dataset highest fid: {get_highest_fid(cursor)}; dataset highest block number: {get_highest_block_num(cursor)}; tar.gz shasum: {compute_hash_of_archive(archive_name)}")
+        f"Dataset latest cast timestamp: {get_latest_timestamp(cursor)}; dataset highest fid: {get_highest_fid(cursor)}; dataset highest block number: {get_highest_block_num(cursor)}; tar.gz shasum: {compute_hash_of_archive(archive_name)}"
+    )
 
     conn.close()

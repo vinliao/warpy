@@ -1,10 +1,12 @@
 import os
+
 from dotenv import load_dotenv
-from sqlalchemy.orm import sessionmaker
-from utils.models import ExternalAddress
 from sqlalchemy import func
 from sqlalchemy.engine import Engine
+from sqlalchemy.orm import sessionmaker
+
 from utils.fetcher import AlchemyTransactionFetcher
+from utils.models import ExternalAddress
 from utils.utils import save_objects
 
 load_dotenv()

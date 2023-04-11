@@ -1,19 +1,18 @@
-from utils.utils import save_objects
-from utils.models import Base, ExternalAddress, User
-from utils.fetcher import EnsdataFetcher
-from sqlalchemy_utils import create_database, database_exists
-from sqlalchemy.orm import declarative_base
-from sqlalchemy import create_engine
 import pytest
 import vcr
-from utils.fetcher import EnsdataFetcher, ExternalAddress
+from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy_utils import create_database, database_exists
+
+from utils.fetcher import EnsdataFetcher, ExternalAddress
+from utils.models import Base, ExternalAddress
+from utils.utils import save_objects
 
 # Define a cassette library directory to store API response recordings
 my_vcr = vcr.VCR(
-    cassette_library_dir='cassettes',
-    record_mode='once',  # Record the API call once and reuse the response
-    filter_headers=['Authorization'],  # Filter out any sensitive headers
+    cassette_library_dir="cassettes",
+    record_mode="once",  # Record the API call once and reuse the response
+    filter_headers=["Authorization"],  # Filter out any sensitive headers
 )
 
 
@@ -67,12 +66,17 @@ def count_external_address_rows(session: Session) -> int:
 # Define the test function for inserting data and checking for merges
 @pytest.mark.asyncio
 # Use a cassette to record and replay the API response
-@my_vcr.use_cassette('ensdata_test.yaml')
+@my_vcr.use_cassette("ensdata_test.yaml")
 async def test_insert_data_and_check_merge(test_sessionmaker):
     # Create an instance of the EnsdataFetcher and fetch data from the API
     ensdata_fetcher = EnsdataFetcher()
-    addresses = ['0x0fd5c2cf64fe2d02f309f616fa362355c91470e7', '0xd7029bdea1c17493893aafe29aad69ef892b8ff2',
-                 '0xd26aca62da2564e591a58105c4431aa5edf2ad8a', '0x4685bb0077179b45095a3c2a175acd9b3cd59d1c', '0x888b4bee0f8dff4e7269811e066a1de6438cbf7a']
+    addresses = [
+        "0x0fd5c2cf64fe2d02f309f616fa362355c91470e7",
+        "0xd7029bdea1c17493893aafe29aad69ef892b8ff2",
+        "0xd26aca62da2564e591a58105c4431aa5edf2ad8a",
+        "0x4685bb0077179b45095a3c2a175acd9b3cd59d1c",
+        "0x888b4bee0f8dff4e7269811e066a1de6438cbf7a",
+    ]
     fetched_data = await ensdata_fetcher.fetch_data(addresses)
 
     # Convert the fetched data into model instances and save them to the database

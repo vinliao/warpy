@@ -120,7 +120,7 @@ class WarpcastUserFetcher(BaseFetcher):
         """
         self.key = key
 
-    def fetch_data(self) -> List[Dict[str, Any]]:
+    def fetch_data(self, partial: bool) -> List[Dict[str, Any]]:
         """
         Fetches data for recent users from the Warpcast API.
 
@@ -133,7 +133,7 @@ class WarpcastUserFetcher(BaseFetcher):
             batch_data, cursor = self._fetch_batch(cursor)
             all_data.extend(batch_data)
 
-            if cursor is None:
+            if partial or cursor is None:
                 break
             else:
                 time.sleep(1)  # add a delay to avoid hitting rate limit

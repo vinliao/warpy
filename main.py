@@ -212,15 +212,15 @@ def query(
             try:
                 with open(raw, "r") as f:
                     raw_sql = f.read()
-                    df = execute_raw_sql(raw_sql)
+                    df = execute_raw_sql(engine, raw_sql)
             except Exception as e:
                 typer.echo(f"Error: Could not execute SQL from file. {str(e)}")
         else:
-            df = execute_raw_sql(raw)
+            df = execute_raw_sql(engine, raw)
     elif query:
-        df = execute_natural_language_query(query)
-    elif advanced:
-        execute_advanced_query(advanced)
+        df = execute_natural_language_query(engine, query)
+    # elif advanced:
+    #     execute_advanced_query(advanced)
     else:
         typer.echo("Please provide either --raw, --query, or --advanced option.")
         return

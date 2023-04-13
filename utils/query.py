@@ -1,6 +1,5 @@
 import os
 import re
-import sqlite3
 from typing import Optional
 
 import polars as pl
@@ -13,6 +12,7 @@ from langchain.sql_database import SQLDatabase
 from rich import box
 from rich.console import Console
 from rich.panel import Panel
+from sqlalchemy.engine import Engine
 
 console = Console()
 
@@ -30,13 +30,12 @@ def get_sqlalchemy_models():
     return remove_imports_from_models(sqlalchemy_models)
 
 
-def execute_raw_sql(query: str) -> Optional[pl.DataFrame]:
+def execute_raw_sql(engine: Engine, query: str) -> Optional[pl.DataFrame]:
     print()
     console.print(Panel(query, title="Running SQL", box=box.SQUARE, expand=False))
     print()
 
-    with sqlite3.connect("datasets/datasets.db") as con:
-        cur = con.cursor()
+    with engine.connect() as con:
         if re.search(r"(?i)\b(insert|update|delete|drop)\b", query):
             user_confirmation = input(
                 "This operation will modify or delete data. Are you sure you want to proceed? [y/N]: "
@@ -44,18 +43,21 @@ def execute_raw_sql(query: str) -> Optional[pl.DataFrame]:
 
             if user_confirmation.lower() != "y":
                 print("Operation cancelled.")
-                return
+                return None
 
-            cur.execute(query)
-            print(f"{cur.rowcount} rows affected.")
+            result = con.execute(query)
+            print(f"{result.rowcount} rows affected.")
         else:
-            cur.execute(query)
-            column_names = [description[0] for description in cur.description]
-            df = pl.DataFrame(cur, schema=column_names)
+            result = con.execute(query)
+            column_names = result.keys()
+            data = [tuple(row) for row in result.fetchall()]
+            df = pl.DataFrame(data, schema=column_names)
             return df
 
 
-def execute_natural_language_query(query: str) -> Optional[pl.DataFrame]:
+def execute_natural_language_query(
+    engine: Engine, query: str
+) -> Optional[pl.DataFrame]:
     chat = ChatOpenAI(temperature=0, openai_api_key=os.getenv("OPENAI_API_KEY"))
 
     initial_prompt_raw = """
@@ -81,7 +83,7 @@ def execute_natural_language_query(query: str) -> Optional[pl.DataFrame]:
     console.print(Panel(query, title="Your query", box=box.SQUARE, expand=False))
 
     sql_query = chat(messages)
-    return execute_raw_sql(sql_query.content)
+    return execute_raw_sql(engine, sql_query.content)
 
 
 def execute_advanced_query(query: str):

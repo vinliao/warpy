@@ -68,13 +68,19 @@ async def test_integration_users(test_sessionmaker):
     # ==============================================================
     # ========================== Warpcast ==========================
     # ==============================================================
-
     warpcast_user_fetcher = WarpcastUserFetcher(key=warpcast_hub_key)
     fetched_users = warpcast_user_fetcher.fetch_data(partial=True)
 
     data = warpcast_user_fetcher.get_models(fetched_users)
     location_list = [x for x in data if isinstance(x, Location)]
     user_list = [x for x in data if isinstance(x, User)]
+
+    for user in user_list:
+        assert user.fid is not None
+        assert user.registered_at is -1
+        assert user.farcaster_address == ""
+        # farcaster_address it shouldn't be null, but it is empty
+        # that's why it's non-nullable with empty value for nwo
 
     # Insert data
     with test_sessionmaker() as session:
@@ -111,7 +117,7 @@ async def test_integration_users(test_sessionmaker):
 
         save_objects(session, updated_users)
 
-        # assert whether the values from searchcaster is updated
+        # Assert whether the values from searchcaster are updated
         for updated_user in updated_users:
             user = get_user_by_fid(session, updated_user.fid)
             assert user.farcaster_address == updated_user.farcaster_address
@@ -170,5 +176,7 @@ async def test_integration_users(test_sessionmaker):
         )
 
         # assert whether the eth transaction of all external address is fetched
+        # TODO: assert whether the eth fetcher only fetches stuff above the
+        #   block number of the latest transaction of user
         # TODO: probably there's a more robust way to do it
         assert len(unique_addresses) == len(addresses)

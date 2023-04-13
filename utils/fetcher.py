@@ -153,7 +153,7 @@ class WarpcastUserFetcher(BaseFetcher):
         """
         self.key = key
 
-    def fetch_data(self, partial: bool) -> List[Dict[str, Any]]:
+    def fetch_data(self, partial: bool = False) -> List[Dict[str, Any]]:
         """
         Fetches data for recent users from the Warpcast API.
 
@@ -227,26 +227,32 @@ class WarpcastUserFetcher(BaseFetcher):
 
         return user_data, location if location.id else None
 
-    def get_models(
-        self, users: List[Dict[str, Any]]
-    ) -> Tuple[List[User], List[Location]]:
+    def get_models(self, users: List[Dict[str, Any]]) -> List[Union[User, Location]]:
         """
-        Processes raw user data and returns lists of User and Location model objects.
+        Processes raw user data and returns a list of User and Location model objects.
 
         :param users: list, A list of dictionaries containing raw user data.
-        :return: A tuple containing two lists: one of User objects and one of Location objects.
+        :return: A list containing User and Location objects.
         """
         user_data = [self._extract_data(user) for user in users]
 
-        user_list = [data[0] for data in user_data]
-        location_list = [data[1] for data in user_data if data[1]]
+        user_and_location_list = [
+            item for sublist in user_data for item in sublist if item
+        ]
 
-        # Filter duplicates and remove None for locations
-        location_list = list(
-            {location.id: location for location in location_list}.values()
-        )
+        # Filter duplicates for locations
+        location_dict = {}
+        mixed_list = []
 
-        return user_list, location_list
+        for item in user_and_location_list:
+            if isinstance(item, Location):
+                if item.id not in location_dict:
+                    location_dict[item.id] = item
+                    mixed_list.append(item)
+            else:
+                mixed_list.append(item)
+
+        return mixed_list
 
 
 class SearchcasterFetcher(BaseFetcher):

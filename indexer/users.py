@@ -5,11 +5,10 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 
 from utils.fetcher import SearchcasterFetcher, WarpcastUserFetcher
-from utils.models import User
+from utils.models import User, Location
 from utils.utils import save_objects, update_users_warpcast
 
 load_dotenv()
-warpcast_hub_key = os.getenv("WARPCAST_HUB_KEY")
 
 
 def delete_unregistered_users(session):
@@ -34,13 +33,15 @@ def update_user_searchcaster(session, user_list):
 
 
 async def main(engine: Engine):
+    warpcast_hub_key = os.getenv("WARPCAST_HUB_KEY")
+    if warpcast_hub_key is None:
+        raise ValueError("WARPCAST_HUB_KEY is not set")
     warpcast_user_fetcher = WarpcastUserFetcher(key=warpcast_hub_key)
-    warpcast_users = warpcast_user_fetcher.fetch_data()
+    warpcast_users = warpcast_user_fetcher.fetch_data(partial=True)
 
-    # TODO:
-    # figure out a ways to update the user without overwriting registered_at
-    # then figure out a way to return a single list instead of tuple
-    user_list, location_list = warpcast_user_fetcher.get_models(warpcast_users)
+    data = warpcast_user_fetcher.get_models(warpcast_users)
+    location_list = [x for x in data if isinstance(x, Location)]
+    user_list = [x for x in data if isinstance(x, User)]
 
     with sessionmaker(bind=engine)() as session:
         save_objects(session, location_list)
@@ -51,7 +52,7 @@ async def main(engine: Engine):
         searchcaster_fetcher = SearchcasterFetcher()
         batch_size = 50
         for i in range(0, len(usernames), batch_size):
-            batch = usernames[i : i + batch_size]
+            batch = usernames[i : i + batch_size]  # noqa: E203
             user_data_list = await searchcaster_fetcher.fetch_data(batch)
             new_users = searchcaster_fetcher.get_models(users, user_data_list)
             save_objects(session, new_users)

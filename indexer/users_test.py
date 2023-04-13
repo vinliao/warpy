@@ -50,8 +50,10 @@ async def test_warpcast_and_searchcaster_integration(test_sessionmaker):
     warpcast_user_fetcher = WarpcastUserFetcher(key=warpcast_hub_key)
     fetched_users = warpcast_user_fetcher.fetch_data(partial=True)
 
-    # Check if the fetched data is correctly formed
-    user_list, location_list = warpcast_user_fetcher.get_models(fetched_users)
+    # # Check if the fetched data is correctly formed
+    data = warpcast_user_fetcher.get_models(fetched_users)
+    location_list = [x for x in data if isinstance(x, Location)]
+    user_list = [x for x in data if isinstance(x, User)]
 
     # Insert data
     with test_sessionmaker() as session:
@@ -61,7 +63,7 @@ async def test_warpcast_and_searchcaster_integration(test_sessionmaker):
         save_objects(session, location_list)
         update_users_warpcast(session, user_list)
 
-        # Assert that the data added has the same length as one coming from the API
+        # Assert len(location_list) == len(fetched_users["locations"])
         after_insert_user_count = session.query(User).count()
         after_insert_location_count = session.query(Location).count()
 
@@ -85,7 +87,7 @@ async def test_warpcast_and_searchcaster_integration(test_sessionmaker):
     # Fetch user data from the Searchcaster API
     user_data_list = await searchcaster_fetcher.fetch_data(test_usernames)
 
-    # Check if the fetched data is correctly formed and the transformation occurred
+    # Check if the transformation occurred
     with test_sessionmaker() as session:
         users = session.query(User).filter(User.username.in_(test_usernames)).all()
         updated_users = searchcaster_fetcher.get_models(users, user_data_list)

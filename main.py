@@ -21,7 +21,7 @@ from utils.query import (
     execute_raw_sql,
 )
 
-engine = create_engine("sqlite:///datasets/datasets.db")
+engine = create_engine("sqlite:///datasets/test.db")
 
 Base.metadata.create_all(engine)
 

@@ -517,19 +517,41 @@ class AlchemyTransactionFetcher(BaseFetcher):
         transactions = []
         page_key = None
         while True:
-            url, headers, payload = self._build_request_url_and_headers(
-                latest_block_of_user, address, page_key
+            headers = {"Content-Type": "application/json"}
+
+            to_payload = self._build_payload(
+                address, latest_block_of_user, page_key, "toAddress"
             )
-            response_data = await self._make_async_request_with_retry(
-                url, headers=headers, data=payload, method="POST"
+            from_payload = self._build_payload(
+                address, latest_block_of_user, page_key, "fromAddress"
             )
-            if not response_data:
+
+            from_response = await self._make_async_request_with_retry(
+                self.base_url, headers=headers, data=from_payload, method="POST"
+            )
+            to_response = await self._make_async_request_with_retry(
+                self.base_url, headers=headers, data=to_payload, method="POST"
+            )
+
+            if not from_response and not to_response:
                 break
 
-            page_key = response_data.get("result", {}).get("pageKey")
-            transactions += response_data["result"]["transfers"]
-            if page_key is None:
+            from_data = from_response.get("result", {})
+            to_data = to_response.get("result", {})
+
+            transactions += from_data.get("transfers", []) + to_data.get(
+                "transfers", []
+            )
+
+            from_page_key = from_data.get("pageKey")
+            to_page_key = to_data.get("pageKey")
+
+            if from_page_key is None and to_page_key is None:
                 break
+            elif from_page_key is not None:
+                page_key = from_page_key
+            else:
+                page_key = to_page_key
 
         return transactions
 
@@ -633,20 +655,22 @@ class AlchemyTransactionFetcher(BaseFetcher):
         # Replace this with your session/query to get the latest block of the user
         return 0
 
-    def _build_request_url_and_headers(
-        self, from_block: int, address: str, page_key: str = None
-    ) -> Tuple[str, Dict[str, str], Dict[str, Any]]:
-        headers = {"accept": "application/json", "content-type": "application/json"}
-
+    def _build_payload(
+        self,
+        address: str,
+        latest_block_of_user: int,
+        addr_type: str,
+        page_key: Optional[str] = None,
+    ) -> Dict[str, Any]:
         payload = {
             "id": 1,
             "jsonrpc": "2.0",
             "method": "alchemy_getAssetTransfers",
             "params": [
                 {
-                    "fromBlock": f"0x{from_block:x}",
+                    "fromBlock": f"0x{latest_block_of_user:x}",
                     "toBlock": "latest",
-                    "toAddress": address,  # TODO: include fromAddress?
+                    addr_type: address,
                     "category": [
                         "erc721",
                         "erc1155",
@@ -660,11 +684,9 @@ class AlchemyTransactionFetcher(BaseFetcher):
                 }
             ],
         }
-
         if page_key:
             payload["params"][0]["pageKey"] = page_key
-
-        return self.base_url, headers, payload
+        return payload
 
 
 class WarpcastCastFetcher(BaseFetcher):

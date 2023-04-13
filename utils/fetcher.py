@@ -537,9 +537,15 @@ class AlchemyTransactionFetcher(BaseFetcher):
         self, transactions: List[Dict[str, Any]]
     ) -> List[Union[EthTransaction, ERC1155Metadata]]:
         models = []
+
         for transaction in transactions:
-            address = transaction.get("to") or transaction.get("from")
-            if address not in self.addresses:
+            to_address = transaction.get("to")
+            from_address = transaction.get("from")
+
+            # Use the original address that was passed to the API
+            address = to_address if to_address in self.addresses else from_address
+
+            if address is None:
                 continue
 
             eth_transaction, erc1155_metadata_objs = self._extract_data(
@@ -548,7 +554,44 @@ class AlchemyTransactionFetcher(BaseFetcher):
             models.append(eth_transaction)
             models.extend(erc1155_metadata_objs)
 
+        txs = [tx for tx in models if isinstance(tx, EthTransaction)]
+        addresses_with_transactions = set([tx.address_external for tx in txs])
+        # filter out the address in self.addresses that don't have any transactions
+        addresses_without_transactions = [
+            address
+            for address in self.addresses
+            if address not in addresses_with_transactions
+        ]
+
+        for address in addresses_without_transactions:
+            models.append(self._make_empty_transaction_row(address))
+
         return models
+
+    def _make_empty_transaction_row(self, address: str) -> EthTransaction:
+        dead_address = "0x0000000000000000000000000000000000000000"
+        return EthTransaction(
+            unique_id=f"empty-{address}",
+            hash=dead_address,
+            address_external=address,
+            timestamp=int(round(time.time() * 1000)),
+            block_num=self._get_current_block_height(),  # current block number (when fetching)
+            from_address=dead_address,
+            to_address=dead_address,
+            value=-1,
+            erc721_token_id=None,
+            token_id=None,
+            asset=None,
+            category="empty",
+        )
+
+    def _get_current_block_height(self) -> int:
+        # data = requests.post(self.base_url, data={"method": "getBlockHeight"}).json()
+        payload = {"jsonrpc": "2.0", "method": "eth_blockNumber", "id": 0}
+        headers = {"Content-Type": "application/json"}
+        response = requests.post(self.base_url, json=payload, headers=headers)
+        result_hex = response.json().get("result", "")
+        return int(result_hex, 16)
 
     def _extract_data(
         self, transaction: Dict[str, Any], address: str
@@ -603,7 +646,7 @@ class AlchemyTransactionFetcher(BaseFetcher):
                 {
                     "fromBlock": f"0x{from_block:x}",
                     "toBlock": "latest",
-                    "toAddress": address,
+                    "toAddress": address,  # TODO: include fromAddress?
                     "category": [
                         "erc721",
                         "erc1155",

@@ -4,11 +4,8 @@ from typing import Optional
 
 import polars as pl
 from dotenv import load_dotenv
-from langchain.agents import create_sql_agent
-from langchain.agents.agent_toolkits import SQLDatabaseToolkit
 from langchain.chat_models import ChatOpenAI
 from langchain.schema import AIMessage, HumanMessage, SystemMessage
-from langchain.sql_database import SQLDatabase
 from rich import box
 from rich.console import Console
 from rich.panel import Panel
@@ -86,17 +83,17 @@ def execute_natural_language_query(
     return execute_raw_sql(engine, sql_query.content)
 
 
-def execute_advanced_query(query: str):
-    db = SQLDatabase.from_uri("sqlite:///datasets/datasets.db")
-    toolkit = SQLDatabaseToolkit(db=db)
+# def execute_advanced_query(query: str):
+#     db = SQLDatabase.from_uri("sqlite:///datasets/datasets.db")
+#     toolkit = SQLDatabaseToolkit(db=db)
 
-    chat = ChatOpenAI(temperature=0, openai_api_key=os.getenv("OPENAI_API_KEY"))
+#     chat = ChatOpenAI(temperature=0, openai_api_key=os.getenv("OPENAI_API_KEY"))
 
-    agent_executor = create_sql_agent(
-        llm=chat,
-        toolkit=toolkit,
-        verbose=True,
-    )
+#     agent_executor = create_sql_agent(
+#         llm=chat,
+#         toolkit=toolkit,
+#         verbose=True,
+#     )
 
-    prompt = f"Describe relevant tables, then {query}"
-    agent_executor.run(prompt)
+#     prompt = f"Describe relevant tables, then {query}"
+#     agent_executor.run(prompt)

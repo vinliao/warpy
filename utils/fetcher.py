@@ -163,7 +163,9 @@ class WarpcastUserFetcher(BaseFetcher):
         cursor = None
 
         while True:
-            batch_data, cursor = self._fetch_batch(cursor)
+            batch_data, cursor = self._fetch_batch(
+                cursor, limit=100 if partial else 1000
+            )
             all_data.extend(batch_data)
 
             if partial or cursor is None:
@@ -217,7 +219,7 @@ class WarpcastUserFetcher(BaseFetcher):
             bio_text=user.get("profile", {}).get("bio", {}).get("text", ""),
             following_count=user.get("followingCount", 0),
             follower_count=user.get("followerCount", 0),
-            location_id=location.id,
+            location_id=location.id if location.id else None,
             verified=int(user["pfp"]["verified"])
             if "pfp" in user and "verified" in user["pfp"]
             else 0,

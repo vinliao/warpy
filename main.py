@@ -16,7 +16,6 @@ from packager.package import main as packager_main
 from packager.upload import main as uploader_main
 from utils.models import Base
 from utils.query import (
-    execute_advanced_query,
     execute_natural_language_query,
     execute_raw_sql,
 )

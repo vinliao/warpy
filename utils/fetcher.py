@@ -164,7 +164,7 @@ class WarpcastUserFetcher(BaseFetcher):
 
         while True:
             batch_data, cursor = self._fetch_batch(
-                cursor, limit=100 if partial else 1000
+                cursor, limit=52 if partial else 1000
             )
             all_data.extend(batch_data)
 

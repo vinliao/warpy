@@ -136,10 +136,10 @@ async def test_integration_users(test_sessionmaker):
         models = ensdata_fetcher.get_models(data)
         save_objects(session, models)
 
-        users_with_external_address = (
-            session.query(User).filter(User.external_address.isnot(None))
-        )_
-        
+        users_with_external_address = session.query(User).filter(
+            User.external_address.isnot(None)
+        )
+
         external_addresses = session.query(ExternalAddress).all()
 
         # assert whether the ens information of all external address is fetched
@@ -150,7 +150,7 @@ async def test_integration_users(test_sessionmaker):
     # ==================== Ethereum transactions ===================
     # ==============================================================
     alchemy_api_key = os.getenv("ALCHEMY_API_KEY")
-    alchemy_transaction_fetcher = AlchemyTransactionFetcher(key=alchemy_api_key)
+    alchemy_fetcher = AlchemyTransactionFetcher(key=alchemy_api_key)
 
     with test_sessionmaker() as session:
         addresses_object = session.query(ExternalAddress).all()
@@ -159,8 +159,8 @@ async def test_integration_users(test_sessionmaker):
         batch_size = 3
         for i in range(0, len(addresses), batch_size):
             batch = addresses[i : i + batch_size]  # noqa: E203
-            data = await alchemy_transaction_fetcher.fetch_data(batch)
-            models = alchemy_transaction_fetcher.get_models(data)
+            data = await alchemy_fetcher.fetch_data(batch)
+            models = alchemy_fetcher.get_models(data)
 
             save_objects(session, models)
 

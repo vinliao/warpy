@@ -12,7 +12,7 @@ from utils.fetcher import (
     EnsdataFetcher,
     AlchemyTransactionFetcher,
 )
-from utils.models import Base, Location, User, ExternalAddress, EthTransaction
+from utils.models import Base, Location, User, ENSData, EthTransaction
 from utils.utils import get_user_by_fid, save_objects, update_users_warpcast
 
 load_dotenv()
@@ -146,7 +146,7 @@ async def test_integration_users(test_sessionmaker):
             User.external_address.isnot(None)
         )
 
-        external_addresses = session.query(ExternalAddress).all()
+        external_addresses = session.query(ENSData).all()
 
         # assert whether the ens information of all external address is fetched
         # TODO: probably there's a more robust way to do it
@@ -159,7 +159,7 @@ async def test_integration_users(test_sessionmaker):
     alchemy_fetcher = AlchemyTransactionFetcher(key=alchemy_api_key)
 
     with test_sessionmaker() as session:
-        addresses_object = session.query(ExternalAddress).all()
+        addresses_object = session.query(ENSData).all()
         addresses = [address.address for address in addresses_object]
 
         batch_size = 3

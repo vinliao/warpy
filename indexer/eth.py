@@ -5,7 +5,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 
 from utils.fetcher import AlchemyTransactionFetcher
-from utils.models import ExternalAddress, EthTransaction
+from utils.models import ENSData, EthTransaction
 from utils.utils import save_objects
 
 load_dotenv()
@@ -13,7 +13,7 @@ load_dotenv()
 
 async def main(engine: Engine):
     with sessionmaker(bind=engine)() as session:
-        addresses = session.query(ExternalAddress).all()
+        addresses = session.query(ENSData).all()
         addresses_string = [address.address for address in addresses]
 
         addresses_blocknum = []

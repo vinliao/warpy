@@ -4,7 +4,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from utils.fetcher import EnsdataFetcher
-from utils.models import ExternalAddress, User
+from utils.models import ENSData, User
 from utils.utils import save_objects
 
 
@@ -14,7 +14,7 @@ def get_users(session: Session) -> List[User]:
         session.query(User)
         .filter(
             User.external_address.isnot(None),
-            ~User.external_address.in_(session.query(ExternalAddress.address)),
+            ~User.external_address.in_(session.query(ENSData.address)),
         )
         .all()
     )

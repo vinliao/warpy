@@ -20,7 +20,7 @@ from utils.query import (
     execute_raw_sql,
 )
 
-db_path = "datasets/datasets.db"
+db_path = "datasets/test.db"
 engine = create_engine(f"sqlite:///{db_path}")
 
 if not os.path.exists(os.path.dirname(db_path)):

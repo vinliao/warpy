@@ -11,11 +11,40 @@ from utils.models import (
     Cast,
     ERC1155Metadata,
     EthTransaction,
-    ExternalAddress,
+    ENSData,
     Location,
     Reaction,
     User,
 )
+
+
+class NewBaseFetcher(ABC):
+    @abstractmethod
+    def fetch(self):
+        """The interface to fetch data from the respective sources."""
+        pass
+
+    @abstractmethod
+    def _extract_data(self, data):
+        """Turn JSON data from API response to SQLAlchemy models."""
+        pass
+
+    @abstractmethod
+    def _fetch_data(self):
+        """Fetch data from the respective sources."""
+        pass
+
+    @abstractmethod
+    def _get_models(self):
+        """Return clean data models ready for insertion into the database."""
+        pass
+
+    def _make_request(self, url, headers=None, timeout=10) -> Any:
+        """Makes a synchronous GET request to the specified URL."""
+        print(f"Fetching from {url}")
+        response = requests.get(url, headers=headers, timeout=timeout)
+        response.raise_for_status()
+        return response.json()
 
 
 class BaseFetcher(ABC):
@@ -23,6 +52,12 @@ class BaseFetcher(ABC):
     BaseFetcher is an abstract base class for all Fetcher classes.
     It provides the basic structure for all fetchers including synchronous and asynchronous request functions.
     """
+
+    @abstractmethod
+    def fetch(self):
+        """
+        Abstract method to be implemented by child classes to fetch data from the respective sources.
+        """
 
     @abstractmethod
     def fetch_data(self):
@@ -455,7 +490,7 @@ class EnsdataFetcher(BaseFetcher):
         users = await self._get_users_from_ensdata(addresses)
         return users
 
-    def get_models(self, users: List[Dict[str, Any]]) -> List[ExternalAddress]:
+    def get_models(self, users: List[Dict[str, Any]]) -> List[ENSData]:
         extracted_users = [self._extract_data(user) for user in users]
         return extracted_users
 
@@ -476,8 +511,8 @@ class EnsdataFetcher(BaseFetcher):
         users = await asyncio.gather(*tasks)
         return list(filter(None, users))
 
-    def _extract_data(self, data: Dict[str, Any]) -> ExternalAddress:
-        return ExternalAddress(
+    def _extract_data(self, data: Dict[str, Any]) -> ENSData:
+        return ENSData(
             address=data.get("address"),
             ens=data.get("ens"),
             url=data.get("url"),

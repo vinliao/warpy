@@ -1,18 +1,16 @@
 import datetime
-from typing import List, Optional, TypeVar
+from typing import List, Optional, Type
 
 from sqlalchemy.orm import Session
 
-from utils.models import Cast, User
-
-T = TypeVar("T")
+from utils.models import Cast, User, Base
 
 
-def save_objects(session: Session, objects: List[T]):
-    if not objects:
+def save_objects(session: Session, models: List[Type[Base]]):
+    if not models:
         return
 
-    [session.merge(obj) for obj in objects]
+    [session.merge(obj) for obj in models]
     session.commit()
 
 

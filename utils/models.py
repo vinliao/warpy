@@ -1,7 +1,17 @@
-from sqlalchemy import Column, Float, ForeignKey, Integer, String
+from sqlalchemy import Column, Float, ForeignKey, Integer, String, Table
 from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
+
+# Association table: many-to-many relationship between User and EthTransaction
+user_eth_transactions_association = Table(
+    "user_eth_transactions",
+    Base.metadata,
+    Column("user_fid", Integer, ForeignKey("users.fid")),
+    Column(
+        "eth_transaction_unique_id", String, ForeignKey("eth_transactions.unique_id")
+    ),
+)
 
 
 class User(Base):
@@ -14,15 +24,18 @@ class User(Base):
     following_count = Column(Integer, nullable=False)
     follower_count = Column(Integer, nullable=False)
     verified = Column(Integer, nullable=False)
-    farcaster_address = Column(String, nullable=False)
-    external_address = Column(
-        String, ForeignKey("external_addresses.address"), nullable=True
-    )
+    generated_farcaster_address = Column(String, nullable=False)
+    address = Column(String, ForeignKey("ens_data.address"), nullable=True)
     registered_at = Column(Integer, nullable=True)
     location_id = Column(String, ForeignKey("locations.id"), nullable=True)
 
     location = relationship("Location", back_populates="users")
-    external_address_rel = relationship("ExternalAddress", back_populates="users")
+    ens_data_rel = relationship("ENSData", back_populates="users")
+    eth_transactions = relationship(
+        "EthTransaction",
+        secondary=user_eth_transactions_association,
+        back_populates="users",
+    )
 
 
 class Location(Base):
@@ -56,8 +69,8 @@ class Reaction(Base):
     target = relationship("Cast", back_populates="reactions")
 
 
-class ExternalAddress(Base):
-    __tablename__ = "external_addresses"
+class ENSData(Base):
+    __tablename__ = "ens_data"
     address = Column(String, primary_key=True, nullable=False)
     ens = Column(String, nullable=True)
     url = Column(String, nullable=True)
@@ -67,8 +80,7 @@ class ExternalAddress(Base):
     email = Column(String, nullable=True)
     discord = Column(String, nullable=True)
 
-    users = relationship("User", back_populates="external_address_rel")
-    eth_transactions = relationship("EthTransaction", back_populates="address_obj")
+    users = relationship("User", back_populates="ens_data_rel")
 
 
 class EthTransaction(Base):
@@ -76,9 +88,6 @@ class EthTransaction(Base):
 
     unique_id = Column(String, primary_key=True, nullable=False)
     hash = Column(String, primary_key=False, nullable=False)
-    address_external = Column(
-        String, ForeignKey("external_addresses.address"), nullable=False
-    )
     timestamp = Column(Integer, nullable=False)
     block_num = Column(Integer, nullable=False)
     from_address = Column(String, nullable=True)
@@ -89,7 +98,11 @@ class EthTransaction(Base):
     asset = Column(String, nullable=True)
     category = Column(String, nullable=False)
 
-    address_obj = relationship("ExternalAddress", back_populates="eth_transactions")
+    users = relationship(
+        "User",
+        secondary=user_eth_transactions_association,
+        back_populates="eth_transactions",
+    )
     erc1155_metadata = relationship("ERC1155Metadata", back_populates="eth_transaction")
 
 

@@ -1,15 +1,13 @@
-from typing import List
 import asyncio
+from typing import Any, Dict, List
 
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from typing import Any, Dict, List, Optional, Tuple, Union
-
 # from utils.fetcher import EnsdataFetcher
 from utils.models import ENSData, User
-from utils.utils import save_objects
 from utils.new_fetcher import AsyncFetcher
+from utils.utils import save_objects
 
 
 class EnsdataFetcher(AsyncFetcher):

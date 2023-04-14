@@ -207,11 +207,7 @@ def update_user_searchcaster(session, user_list):
 
 
 async def main(engine: Engine):
-    fetch_warpcast = False
-    fetch_searchcaster = True
-
-    if not fetch_warpcast and not fetch_searchcaster:
-        raise ValueError("Must fetch from at least one source")
+    fetch_warpcast = True
 
     with sessionmaker(bind=engine)() as session:
         if fetch_warpcast:
@@ -219,7 +215,7 @@ async def main(engine: Engine):
             if warpcast_hub_key is None:
                 raise ValueError("WARPCAST_HUB_KEY is not set")
             warpcast_fetcher = WarpcastUserFetcher(key=warpcast_hub_key)
-            users_and_location = warpcast_fetcher.fetch(partial=False)
+            users_and_location = warpcast_fetcher.fetch(partial=True)
 
             location_list = [x for x in users_and_location if isinstance(x, Location)]
             user_list = [x for x in users_and_location if isinstance(x, User)]
@@ -227,13 +223,12 @@ async def main(engine: Engine):
             save_objects(session, location_list)
             update_users_warpcast(session, user_list)
 
-        if fetch_searchcaster:
-            unprocessed_user = session.query(User).filter_by(registered_at=-1).all()
-            batch_size = 50
-            for i in range(0, len(unprocessed_user), batch_size):
-                batch = unprocessed_user[i : i + batch_size]  # noqa: E203
-                searchcaster_fetcher = SearchcasterFetcher(batch)
-                updated_users = await searchcaster_fetcher.fetch()
-                save_objects(session, updated_users)
+        unprocessed_user = session.query(User).filter_by(registered_at=-1).all()
+        batch_size = 50
+        for i in range(0, len(unprocessed_user), batch_size):
+            batch = unprocessed_user[i : i + batch_size]  # noqa: E203
+            searchcaster_fetcher = SearchcasterFetcher(batch)
+            updated_users = await searchcaster_fetcher.fetch()
+            save_objects(session, updated_users)
 
-            delete_unregistered_users(session)
+        delete_unregistered_users(session)

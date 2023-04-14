@@ -56,7 +56,7 @@ class AsyncFetcher(Fetcher):
     async def _make_async_request(
         self,
         url: str,
-        headers: Dict[str, str] = None,
+        headers: Optional[Dict[str, str]] = None,
         data: Any = None,
         method: str = "GET",
         timeout: int = 10,
@@ -84,7 +84,7 @@ class AsyncFetcher(Fetcher):
         url: str,
         max_retries: int = 3,
         delay: int = 5,
-        headers: Dict[str, str] = None,
+        headers: Optional[Dict[str, str]] = None,
         method: str = "GET",
         data: Any = None,
         timeout: int = 10,

@@ -20,9 +20,14 @@ from utils.query import (
     execute_raw_sql,
 )
 
-engine = create_engine("sqlite:///datasets/test.db")
+db_path = "datasets/datasets.db"
+engine = create_engine(f"sqlite:///{db_path}")
 
-Base.metadata.create_all(engine)
+if not os.path.exists(os.path.dirname(db_path)):
+    os.makedirs(os.path.dirname(db_path))
+
+if not os.path.exists(db_path):
+    Base.metadata.create_all(engine)
 
 
 load_dotenv()
@@ -174,19 +179,19 @@ def refresh_ens_data():
 @app.command()
 def download():
     """Download datasets."""
-    downloader_main()
+    downloader_main(engine)
 
 
 @app.command()
 def upload():
     """Upload datasets."""
-    uploader_main()
+    uploader_main(engine)
 
 
 @app.command()
 def package():
     """Package and zip datasets."""
-    packager_main()
+    packager_main(engine)
 
 
 @app.command()

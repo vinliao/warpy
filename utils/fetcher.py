@@ -495,14 +495,13 @@ class AlchemyTransactionFetcher(BaseFetcher):
         self.transactions = []
         self.addresses = []
 
-    async def fetch_data(self, addresses: List[str]):
-        self.addresses = addresses
-        latest_block_of_user = self._get_latest_block_of_user()
+    async def fetch_data(self, addresses_blocknum: List[Tuple[str, int]]):
+        self.addresses_blocknum = addresses_blocknum
 
         # Fetch data concurrently using asyncio.gather
         tasks = [
             self._fetch_data_for_address(address, latest_block_of_user)
-            for address in self.addresses
+            for address, latest_block_of_user in self.addresses_blocknum
         ]
         all_transactions = await asyncio.gather(*tasks)
 
@@ -520,10 +519,16 @@ class AlchemyTransactionFetcher(BaseFetcher):
             headers = {"Content-Type": "application/json"}
 
             to_payload = self._build_payload(
-                address, latest_block_of_user, page_key, "toAddress"
+                address=address,
+                latest_block_of_user=latest_block_of_user,
+                addr_type="toAddress",
+                page_key=page_key,
             )
             from_payload = self._build_payload(
-                address, latest_block_of_user, page_key, "fromAddress"
+                address=address,
+                latest_block_of_user=latest_block_of_user,
+                addr_type="fromAddress",
+                page_key=page_key,
             )
 
             from_response = await self._make_async_request_with_retry(
@@ -662,7 +667,7 @@ class AlchemyTransactionFetcher(BaseFetcher):
         addr_type: str,
         page_key: Optional[str] = None,
     ) -> Dict[str, Any]:
-        payload = {
+        payload: Dict[str, Any] = {
             "id": 1,
             "jsonrpc": "2.0",
             "method": "alchemy_getAssetTransfers",

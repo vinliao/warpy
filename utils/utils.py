@@ -3,7 +3,7 @@ from typing import List, Optional, Type
 
 from sqlalchemy.orm import Session
 
-from utils.models import Cast, User, Base
+from utils.models import Base, Cast, User
 
 
 def save_objects(session: Session, models: List[Type[Base]]):

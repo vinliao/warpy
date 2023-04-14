@@ -7,12 +7,12 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from utils.fetcher import (
+    AlchemyTransactionFetcher,
+    EnsdataFetcher,
     SearchcasterFetcher,
     WarpcastUserFetcher,
-    EnsdataFetcher,
-    AlchemyTransactionFetcher,
 )
-from utils.models import Base, Location, User, ENSData, EthTransaction
+from utils.models import Base, ENSData, EthTransaction, Location, User
 from utils.utils import get_user_by_fid, save_objects, update_users_warpcast
 
 load_dotenv()

@@ -1,16 +1,15 @@
+import asyncio
 import os
-
 import time
+from typing import Any, Dict, List, Optional, Tuple, Union
+
 from dotenv import load_dotenv
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 
-from typing import Any, Dict, List, Optional, Tuple, Union
-from utils.models import User, Location
+from utils.models import Location, User
+from utils.new_fetcher import AsyncFetcher, SyncFetcher
 from utils.utils import save_objects, update_users_warpcast
-import asyncio
-
-from utils.new_fetcher import SyncFetcher, AsyncFetcher
 
 
 class WarpcastUserFetcher(SyncFetcher):

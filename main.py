@@ -15,10 +15,7 @@ from packager.download import main as downloader_main
 from packager.package import main as packager_main
 from packager.upload import main as uploader_main
 from utils.models import Base
-from utils.query import (
-    execute_natural_language_query,
-    execute_raw_sql,
-)
+from utils.query import execute_natural_language_query, execute_raw_sql
 
 db_path = "datasets/test.db"
 engine = create_engine(f"sqlite:///{db_path}")

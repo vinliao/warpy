@@ -10,7 +10,6 @@ class Fetcher(ABC):
     @abstractmethod
     def fetch(self):
         """The interface to fetch data from the respective sources."""
-        pass
 
     def _make_request_headers(
         self, headers: Optional[Dict[str, str]] = None
@@ -22,17 +21,14 @@ class Fetcher(ABC):
     @abstractmethod
     def _extract_data(self, data):
         """Turn JSON data from API response to SQLAlchemy models."""
-        pass
 
     @abstractmethod
     def _fetch_data(self):
         """Fetch data from the respective sources."""
-        pass
 
     @abstractmethod
     def _get_models(self):
         """Return clean data models ready for insertion into the database."""
-        pass
 
     def _make_request(self, url, headers=None, timeout=10) -> Any:
         """Makes a synchronous GET request to the specified URL."""

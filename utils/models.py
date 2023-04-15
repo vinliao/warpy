@@ -53,7 +53,7 @@ class Cast(Base):
     thread_hash = Column(String, nullable=False)
     text = Column(String, nullable=False)
     timestamp = Column(Integer, nullable=False)
-    author_fid = Column(Integer, nullable=False)
+    author_fid = Column(Integer, ForeignKey("users.fid"), nullable=False)
     parent_hash = Column(String, ForeignKey("casts.hash"), nullable=True)
 
     reactions = relationship("Reaction", back_populates="target")

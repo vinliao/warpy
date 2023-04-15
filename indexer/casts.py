@@ -6,8 +6,8 @@ from dotenv import load_dotenv
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 
+from utils.fetcher import SyncFetcher
 from utils.models import Cast
-from utils.new_fetcher import SyncFetcher
 from utils.utils import save_casts_to_sqlite
 
 

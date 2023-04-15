@@ -10,6 +10,7 @@ from sqlalchemy import or_
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from utils.fetcher import AsyncFetcher
 from utils.models import (
     ENSData,
     ERC1155Metadata,
@@ -17,7 +18,6 @@ from utils.models import (
     User,
     user_eth_transactions_association,
 )
-from utils.new_fetcher import AsyncFetcher
 from utils.utils import save_objects
 
 load_dotenv()
@@ -258,6 +258,7 @@ def make_user_transaction_association(
 
 async def main(engine: Engine):
     with sessionmaker(bind=engine)() as session:
+        # TODO: figure out better filters here
         addresses = session.query(ENSData).all()
         addresses_string = [address.address for address in addresses]
         addresses_string = addresses_string[:10]

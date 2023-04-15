@@ -4,9 +4,8 @@ from typing import Any, Dict, List
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
-# from utils.fetcher import EnsdataFetcher
+from utils.fetcher import AsyncFetcher
 from utils.models import ENSData, User
-from utils.new_fetcher import AsyncFetcher
 from utils.utils import save_objects
 
 

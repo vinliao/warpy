@@ -7,8 +7,8 @@ from dotenv import load_dotenv
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 
+from utils.fetcher import AsyncFetcher
 from utils.models import Cast, Reaction
-from utils.new_fetcher import AsyncFetcher
 
 load_dotenv()
 

@@ -7,8 +7,8 @@ from dotenv import load_dotenv
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 
+from utils.fetcher import AsyncFetcher, SyncFetcher
 from utils.models import Location, User
-from utils.new_fetcher import AsyncFetcher, SyncFetcher
 from utils.utils import save_objects, update_users_warpcast
 
 

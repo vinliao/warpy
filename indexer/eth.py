@@ -3,6 +3,7 @@ import os
 import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple, Union
+from sqlalchemy import or_
 
 import requests
 from dotenv import load_dotenv
@@ -278,9 +279,42 @@ async def main(engine: Engine):
 
         # make new associations
         users = session.query(User).all()
+        txs = session.query(EthTransaction).all()
+
         for user in users:
             for tx in [x for x in txs if isinstance(x, EthTransaction)]:
+                print(
+                    f"Checking association for user {user.fid} with transaction {tx.unique_id}"
+                )  # Add debug print
                 if tx.to_address == user.address:
+                    print(
+                        f"Address match: {tx.to_address} (to_address) == {user.address}"
+                    )  # Add debug print
                     make_user_transaction_association(session, user.fid, tx.unique_id)
                 elif tx.from_address == user.address:
+                    print(
+                        f"Address match: {tx.from_address} (from_address) == {user.address}"
+                    )  # Add debug print
                     make_user_transaction_association(session, user.fid, tx.unique_id)
+
+        txs = session.query(EthTransaction).all()
+
+        for tx in txs:
+            print(
+                f"Checking association for transaction {tx.unique_id}"
+            )  # Add debug print
+
+            # Query the user with matching address
+            user = (
+                session.query(User)
+                .filter(
+                    or_(User.address == tx.to_address, User.address == tx.from_address)
+                )
+                .first()
+            )
+
+            if user:
+                print(
+                    f"Address match: (to_address: {tx.to_address}, from_address: {tx.from_address}) == {user.address}"
+                )  # Add debug print
+                make_user_transaction_association(session, user.fid, tx.unique_id)

@@ -3,10 +3,10 @@ import os
 import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple, Union
-from sqlalchemy import or_
 
 import requests
 from dotenv import load_dotenv
+from sqlalchemy import or_
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 

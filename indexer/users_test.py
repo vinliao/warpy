@@ -6,10 +6,9 @@ from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from indexer.eth import AlchemyTransactionFetcher
 from indexer.ensdata import EnsdataFetcher
+from indexer.eth import AlchemyTransactionFetcher
 from indexer.users import SearchcasterFetcher, WarpcastUserFetcher
-
 from utils.models import Base, ENSData, EthTransaction, Location, User
 from utils.utils import get_user_by_fid, save_objects, update_users_warpcast
 

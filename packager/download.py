@@ -1,8 +1,9 @@
-import pyarrow.parquet as pq
-import sqlite3
 import os
-import requests
+import sqlite3
 import tarfile
+
+import pyarrow.parquet as pq
+import requests
 from tqdm import tqdm
 
 

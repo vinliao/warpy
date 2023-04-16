@@ -123,15 +123,12 @@ def main(engine: Engine):
         raise Exception("WARPCAST_HUB_KEY not found in .env file.")
 
     with sessionmaker(bind=engine)() as session:
-        # latest_cast = session.query(Cast).order_by(Cast.timestamp.desc()).first()
-        # latest_timestamp = latest_cast.timestamp if latest_cast else 0
-
-        # 7 days ago in unix ms
-        latest_timestamp = int(time.time() * 1000) - 7 * 24 * 60 * 60 * 1000
+        latest_cast = session.query(Cast).order_by(Cast.timestamp.desc()).first()
+        latest_timestamp = latest_cast.timestamp if latest_cast else 0
+        print(latest_timestamp)
 
         fetcher = WarpcastCastFetcher(
             key=warpcast_hub_key, latest_timestamp=latest_timestamp
         )
         data = fetcher.fetch()
-        # data = fetcher.fetch_data(latest_timestamp)
         save_casts_to_sqlite(session, data, latest_timestamp)

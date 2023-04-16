@@ -168,7 +168,7 @@ async def main(engine: Engine):
         print(f"Fetching reactions for {len(casts)} casts...")
 
         cast_hashes = [cast.hash for cast in casts]
-        batch_size = 10
+        batch_size = 1000
         for i in range(0, len(cast_hashes), batch_size):
             batch = cast_hashes[i : i + batch_size]  # noqa: E203
             fetcher = WarpcastReactionFetcher(

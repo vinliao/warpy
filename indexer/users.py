@@ -215,7 +215,7 @@ async def main(engine: Engine):
             if warpcast_hub_key is None:
                 raise ValueError("WARPCAST_HUB_KEY is not set")
             warpcast_fetcher = WarpcastUserFetcher(key=warpcast_hub_key)
-            users_and_location = warpcast_fetcher.fetch(partial=True)
+            users_and_location = warpcast_fetcher.fetch(partial=False)
 
             location_list = [x for x in users_and_location if isinstance(x, Location)]
             user_list = [x for x in users_and_location if isinstance(x, User)]

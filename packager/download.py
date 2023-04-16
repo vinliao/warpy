@@ -66,18 +66,19 @@ def main(engine: Engine):
     # url = "https://pub-3916d8c82abb435eb70175747fdc2119.r2.dev/datasets.tar.gz"
 
     archive_path = "datasets.tar.gz"
-    parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    extracted_dir = os.path.join(parent_dir, "datasets")
+    print(archive_path)
+    # parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    # extracted_dir = os.path.join(parent_dir, "datasets")
 
-    # download_file(url, filename)
-    extract_archive(archive_path, extracted_dir)
+    # # download_file(url, filename)
+    # extract_archive(archive_path, extracted_dir)
 
-    # Remove existing 'datasets' directory if it exists
-    if os.path.exists(extracted_dir):
-        shutil.rmtree(extracted_dir)
+    # # Remove existing 'datasets' directory if it exists
+    # if os.path.exists(extracted_dir):
+    #     shutil.rmtree(extracted_dir)
 
-    extract_archive(archive_path, extracted_dir)
-    parquet_to_sqlite(engine, extracted_dir)
+    # extract_archive(archive_path, extracted_dir)
+    # parquet_to_sqlite(engine, extracted_dir)
 
     # activate these all later
     # local_hash, downloaded_hash = get_local_and_downloaded_hashes(

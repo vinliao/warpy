@@ -176,19 +176,19 @@ def refresh_ens_data():
 @app.command()
 def download():
     """Download datasets."""
-    downloader_main(engine)
+    downloader_main()
 
 
 @app.command()
 def upload():
     """Upload datasets."""
-    uploader_main(engine)
+    uploader_main()
 
 
 @app.command()
 def package():
     """Package and zip datasets."""
-    packager_main(engine)
+    packager_main()
 
 
 @app.command()

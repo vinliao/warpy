@@ -239,7 +239,9 @@ def get_address_to_process(session: Session, fetched_addresses_file: str) -> Lis
     users = (
         session.query(User)
         .filter(User.address.isnot(None))
-        .filter(User.fid != 166)  # this user has ungodly amount of tx
+        .filter(
+            User.fid != 166 and User.fid != 5650
+        )  # these user has ungodly amount of tx
         .filter(not_(User.address.in_(fetched_addresses)))
         .all()
     )

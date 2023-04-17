@@ -1,4 +1,5 @@
 import asyncio
+import csv
 import os
 import time
 from datetime import datetime
@@ -6,19 +7,12 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import requests
 from dotenv import load_dotenv
-from sqlalchemy import or_
+from sqlalchemy import not_
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from utils.fetcher import AsyncFetcher
-from utils.models import (
-    ENSData,
-    ERC1155Metadata,
-    EthTransaction,
-    User,
-    user_eth_transactions_association,
-)
-from utils.utils import save_objects
+from utils.models import ERC1155Metadata, EthTransaction, User
 
 load_dotenv()
 
@@ -65,10 +59,14 @@ class AlchemyTransactionFetcher(AsyncFetcher):
             )
 
             from_response = await self._make_async_request_with_retry(
-                self.base_url, headers=headers, data=from_payload, method="POST"
+                self.base_url,
+                headers=headers,
+                data=from_payload,
+                method="POST",
+                delay=2,
             )
             to_response = await self._make_async_request_with_retry(
-                self.base_url, headers=headers, data=to_payload, method="POST"
+                self.base_url, headers=headers, data=to_payload, method="POST", delay=2
             )
 
             if not from_response and not to_response:
@@ -95,6 +93,7 @@ class AlchemyTransactionFetcher(AsyncFetcher):
 
     def _get_models(self) -> List[Union[EthTransaction, ERC1155Metadata]]:
         models = []
+        seen_unique_ids = set()
 
         for transaction in self.transactions:
             to_address = transaction.get("to")
@@ -111,22 +110,14 @@ class AlchemyTransactionFetcher(AsyncFetcher):
             eth_transaction, erc1155_metadata_objs = self._extract_data(
                 transaction, address
             )
-            models.append(eth_transaction)
+
+            # Filter out duplicates because if the to and from address is the
+            # same, there will be two transactions inserted to DB
+            if eth_transaction.unique_id not in seen_unique_ids:
+                models.append(eth_transaction)
+                seen_unique_ids.add(eth_transaction.unique_id)
+
             models.extend(erc1155_metadata_objs)
-
-        # txs = [tx for tx in models if isinstance(tx, EthTransaction)]
-        # addresses_with_transactions = set([tx.address_external for tx in txs])
-
-        # addresses_without_transactions = [
-        #     address
-        #     for address in self._get_addresses()
-        #     if address not in addresses_with_transactions
-        # ]
-
-        # current_block_height = self._get_current_block_height()
-
-        # for address in addresses_without_transactions:
-        #     models.append(self._make_empty_transaction(address, current_block_height))
 
         return models
 
@@ -229,42 +220,91 @@ class AlchemyTransactionFetcher(AsyncFetcher):
         return self._get_models()
 
 
-def make_user_transaction_association(
-    session: Session, user_fid: int, eth_transaction_unique_id: str
-):
-    print(
-        f"Creating association for user {user_fid} and transaction {eth_transaction_unique_id}"
-    )
-    # Check if the association already exists
-    existing_association = (
-        session.query(user_eth_transactions_association)
-        .filter_by(
-            user_fid=user_fid, eth_transaction_unique_id=eth_transaction_unique_id
-        )
-        .first()
+def read_fetched_addresses(file_path: str) -> List[str]:
+    fetched_addresses = []
+    try:
+        with open(file_path, "r") as f:
+            reader = csv.reader(f)
+            for row in reader:
+                fetched_addresses.extend(row)
+    except FileNotFoundError:
+        pass
+    return fetched_addresses
+
+
+def get_address_to_process(session: Session, fetched_addresses_file: str) -> List[str]:
+    # Read fetched_addresses from the CSV file
+    fetched_addresses = read_fetched_addresses(fetched_addresses_file)
+
+    users = (
+        session.query(User)
+        .filter(User.address.isnot(None))
+        .filter(User.fid != 166)  # this user has ungodly amount of tx
+        .filter(not_(User.address.in_(fetched_addresses)))
+        .all()
     )
 
-    if not existing_association:
-        # If the association doesn't exist, create it
-        new_association = user_eth_transactions_association.insert().values(
-            user_fid=user_fid, eth_transaction_unique_id=eth_transaction_unique_id
+    return [user.address for user in users]
+
+
+def insert_eth_transactions_and_metadata(
+    session, eth_transactions_metadata: List[Union[EthTransaction, ERC1155Metadata]]
+):
+    eth_transactions = [
+        item for item in eth_transactions_metadata if isinstance(item, EthTransaction)
+    ]
+    erc1155_metadata = [
+        item for item in eth_transactions_metadata if isinstance(item, ERC1155Metadata)
+    ]
+
+    # Get the list of existing unique_ids for EthTransaction
+    existing_unique_ids = (
+        session.query(EthTransaction.unique_id)
+        .filter(
+            EthTransaction.unique_id.in_(tuple(tx.unique_id for tx in eth_transactions))
         )
-        session.execute(new_association)
-        session.commit()
-        print("Association created!")
-    else:
-        print("Association already exists!")
+        .all()
+    )
+
+    # Get the list of existing eth_transaction_hashes for ERC1155Metadata
+    existing_hashes = (
+        session.query(ERC1155Metadata.eth_transaction_hash)
+        .filter(
+            ERC1155Metadata.eth_transaction_hash.in_(
+                tuple(meta.eth_transaction_hash for meta in erc1155_metadata)
+            )
+        )
+        .all()
+    )
+
+    # Convert the lists of tuples to sets for faster lookup
+    existing_unique_ids = set([unique_id[0] for unique_id in existing_unique_ids])
+    existing_hashes = set([hash_[0] for hash_ in existing_hashes])
+
+    # Insert only the new EthTransactions into the database
+    for tx in eth_transactions:
+        if tx.unique_id not in existing_unique_ids:
+            session.add(tx)
+
+    # Insert only the new ERC1155Metadata into the database
+    for meta in erc1155_metadata:
+        if meta.eth_transaction_hash not in existing_hashes:
+            session.add(meta)
+
+    # Commit the changes to the database
+    session.commit()
+    print(
+        f"Inserted {len(eth_transactions)} EthTransactions and {len(erc1155_metadata)} ERC1155Metadata"
+    )
 
 
 async def main(engine: Engine):
+    addresses_filename = "fetched_addresses.csv"
     with sessionmaker(bind=engine)() as session:
-        # TODO: figure out better filters here
-        addresses = session.query(ENSData).all()
-        addresses_string = [address.address for address in addresses]
-        addresses_string = addresses_string[:10]
+        addresses = get_address_to_process(session, addresses_filename)
+        print(len(addresses))
 
-        # addresses_blocknum = []
-        addresses_blocknum = [(address, 0) for address in addresses_string]
+        addresses_blocknum = [(address, 0) for address in addresses]
         alchemy_api_key = os.getenv("ALCHEMY_API_KEY")
         if not alchemy_api_key:
             raise ValueError("Missing ALCHEMY_API_KEY")
@@ -276,46 +316,11 @@ async def main(engine: Engine):
                 key=alchemy_api_key, addresses_blocknum=batch
             )
             txs = await fetcher.fetch()
-            save_objects(session, txs)
+            insert_eth_transactions_and_metadata(session, txs)
 
-        # make new associations
-        users = session.query(User).all()
-        txs = session.query(EthTransaction).all()
+            batch_addresses = [address for address, _ in batch]
 
-        for user in users:
-            for tx in [x for x in txs if isinstance(x, EthTransaction)]:
-                print(
-                    f"Checking association for user {user.fid} with transaction {tx.unique_id}"
-                )  # Add debug print
-                if tx.to_address == user.address:
-                    print(
-                        f"Address match: {tx.to_address} (to_address) == {user.address}"
-                    )  # Add debug print
-                    make_user_transaction_association(session, user.fid, tx.unique_id)
-                elif tx.from_address == user.address:
-                    print(
-                        f"Address match: {tx.from_address} (from_address) == {user.address}"
-                    )  # Add debug print
-                    make_user_transaction_association(session, user.fid, tx.unique_id)
-
-        txs = session.query(EthTransaction).all()
-
-        for tx in txs:
-            print(
-                f"Checking association for transaction {tx.unique_id}"
-            )  # Add debug print
-
-            # Query the user with matching address
-            user = (
-                session.query(User)
-                .filter(
-                    or_(User.address == tx.to_address, User.address == tx.from_address)
-                )
-                .first()
-            )
-
-            if user:
-                print(
-                    f"Address match: (to_address: {tx.to_address}, from_address: {tx.from_address}) == {user.address}"
-                )  # Add debug print
-                make_user_transaction_association(session, user.fid, tx.unique_id)
+            with open(addresses_filename, "a") as f:
+                writer = csv.writer(f)
+                for address in batch_addresses:
+                    writer.writerow([address])

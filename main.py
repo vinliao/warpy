@@ -10,6 +10,7 @@ from indexer.casts import main as cast_indexer_main
 from indexer.ensdata import main as ensdata_indexer_main
 from indexer.eth import main as eth_indexer_main
 from indexer.reactions import main as reaction_indexer_main
+from indexer.user_eth_association import main as user_eth_association_main
 from indexer.users import main as user_indexer_main
 from packager.download import main as downloader_main
 from packager.package import main as packager_main
@@ -171,6 +172,13 @@ def refresh_ens_data():
     """Refresh ENS data."""
 
     asyncio.run(ensdata_indexer_main(engine))
+
+
+@indexer_app.command("usereth")
+def make_user_eth_association():
+    """Make user-eth association table."""
+
+    user_eth_association_main(engine)
 
 
 @app.command()

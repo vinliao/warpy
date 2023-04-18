@@ -3,6 +3,20 @@ from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
 
+
+class Cast(Base):
+    __tablename__ = "casts"
+
+    hash = Column(String, primary_key=True, nullable=False)
+    thread_hash = Column(String, nullable=False)
+    text = Column(String, nullable=False)
+    timestamp = Column(Integer, nullable=False)
+    author_fid = Column(Integer, ForeignKey("users.fid"), nullable=False)
+    parent_hash = Column(String, ForeignKey("casts.hash"), nullable=True)
+
+    reactions = relationship("Reaction", back_populates="target")
+
+
 # Association table: many-to-many relationship between User and EthTransaction
 user_eth_transactions_association = Table(
     "user_eth_transactions",
@@ -44,19 +58,6 @@ class Location(Base):
     description = Column(String, nullable=False)
 
     users = relationship("User", back_populates="location")
-
-
-class Cast(Base):
-    __tablename__ = "casts"
-
-    hash = Column(String, primary_key=True, nullable=False)
-    thread_hash = Column(String, nullable=False)
-    text = Column(String, nullable=False)
-    timestamp = Column(Integer, nullable=False)
-    author_fid = Column(Integer, ForeignKey("users.fid"), nullable=False)
-    parent_hash = Column(String, ForeignKey("casts.hash"), nullable=True)
-
-    reactions = relationship("Reaction", back_populates="target")
 
 
 class Reaction(Base):

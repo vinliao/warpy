@@ -1,12 +1,10 @@
+from collections import defaultdict
+
+from sqlalchemy import func, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.sql import or_
 
 from utils.models import EthTransaction, User, user_eth_transactions_association
-from sqlalchemy.orm import joinedload
-
-from collections import defaultdict
-from sqlalchemy import func, text
 
 
 def delete_duplicate_associations(session: Session):
@@ -87,19 +85,28 @@ def process_tx_batch(session, tx_batch, user_address_cache):
 def main(engine: Engine):
     batch_size = 5000  # Decrease batch size to reduce unique_addresses count
     user_address_cache = defaultdict(int)
+    last_unique_id = "0"  # Start with a character that is lexicographically smaller than any unique_id
 
     with sessionmaker(bind=engine)() as session:
-        tx_count = session.query(EthTransaction).count()
+        # tx_count = session.query(EthTransaction).count()
 
-        for tx_offset in range(370000, tx_count, batch_size):
+        while True:
             tx_batch = (
                 session.query(EthTransaction)
+                .filter(
+                    EthTransaction.unique_id > last_unique_id
+                )  # Select records with unique_id lexicographically greater than the last one processed
                 .order_by(EthTransaction.unique_id)
-                .offset(tx_offset)
                 .limit(batch_size)
                 .all()
             )
 
-            print(f"Current offset: {tx_offset}")
+            if not tx_batch:
+                break
+
+            print(f"Processing records after unique_id: {last_unique_id}")
 
             process_tx_batch(session, tx_batch, user_address_cache)
+
+            # Update the last_unique_id
+            last_unique_id = tx_batch[-1].unique_id

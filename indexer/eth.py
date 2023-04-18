@@ -204,6 +204,7 @@ class AlchemyTransactionFetcher(AsyncFetcher):
                         "erc20",
                         "specialnft",
                         "external",
+                        "internal"
                     ],
                     "withMetadata": True,
                     "excludeZeroValue": True,

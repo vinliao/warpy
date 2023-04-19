@@ -1,6 +1,6 @@
 from collections import defaultdict
 
-from sqlalchemy import func, text
+from sqlalchemy import func
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -8,8 +8,8 @@ from utils.models import EthTransaction, User, user_eth_transactions_association
 
 
 def delete_duplicate_associations(session: Session):
-    # Create a CTE to identify duplicate associations
-    duplicates_cte = session.query(
+    # Create a subquery to identify duplicate associations
+    duplicates_subquery = session.query(
         user_eth_transactions_association.c.user_fid,
         user_eth_transactions_association.c.eth_transaction_unique_id,
         func.row_number()
@@ -21,23 +21,34 @@ def delete_duplicate_associations(session: Session):
             order_by=user_eth_transactions_association.c.user_fid,
         )
         .label("row_number"),
-    ).cte("duplicates_cte")
+    ).subquery("duplicates_subquery")
 
-    # Join the CTE with the association table and delete the duplicate rows
-    affected_rows = (
-        session.query(user_eth_transactions_association)
-        .filter(
-            text(
-                f"{user_eth_transactions_association.c.user_fid} = {duplicates_cte.c.user_fid} AND "
-                f"{user_eth_transactions_association.c.eth_transaction_unique_id} = {duplicates_cte.c.eth_transaction_unique_id} AND "
-                "duplicates_cte.row_number > 1"
-            )
+    # Get the user_fid and eth_transaction_unique_id of duplicate rows
+    duplicate_rows = (
+        session.query(
+            duplicates_subquery.c.user_fid,
+            duplicates_subquery.c.eth_transaction_unique_id,
         )
-        .delete(synchronize_session=False)
+        .filter(duplicates_subquery.c.row_number > 1)
+        .all()
     )
 
+    # Delete the duplicate rows
+    affected_rows = 0
+    for user_fid, eth_transaction_unique_id in duplicate_rows:
+        deletion_count = (
+            session.query(user_eth_transactions_association)
+            .filter(
+                user_eth_transactions_association.c.user_fid == user_fid,
+                user_eth_transactions_association.c.eth_transaction_unique_id
+                == eth_transaction_unique_id,
+            )
+            .delete(synchronize_session=False)
+        )
+        affected_rows += deletion_count
+        session.commit()
+
     print(f"Deleted {affected_rows} duplicate rows")
-    session.commit()
 
 
 def process_tx_batch(session, tx_batch, user_address_cache):
@@ -83,13 +94,11 @@ def process_tx_batch(session, tx_batch, user_address_cache):
 
 
 def main(engine: Engine):
-    batch_size = 5000  # Decrease batch size to reduce unique_addresses count
+    batch_size = 20000  # Decrease batch size to reduce unique_addresses count
     user_address_cache = defaultdict(int)
     last_unique_id = "0"  # Start with a character that is lexicographically smaller than any unique_id
 
     with sessionmaker(bind=engine)() as session:
-        # tx_count = session.query(EthTransaction).count()
-
         while True:
             tx_batch = (
                 session.query(EthTransaction)
@@ -110,3 +119,5 @@ def main(engine: Engine):
 
             # Update the last_unique_id
             last_unique_id = tx_batch[-1].unique_id
+
+        # delete_duplicate_associations(session)

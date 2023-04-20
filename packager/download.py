@@ -8,8 +8,8 @@ from tqdm import tqdm
 
 
 def main():
-    url = "https://pub-3916d8c82abb435eb70175747fdc2119.r2.dev/datasets.tar.gz"
-    filename = "datasets.tar.gz"
+    filename = "1681979704072.tar.gz"
+    url = f"https://pub-3916d8c82abb435eb70175747fdc2119.r2.dev/{filename}"
 
     # Download the file
     response = requests.get(url, stream=True)
@@ -22,9 +22,6 @@ def main():
             f.write(data)
     progress_bar.close()
 
-    # Extract the tar.gz archive containing the Parquet files
-    archive_path = "datasets.tar.gz"
-
     # Get the parent directory of the current script
     parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     extracted_dir = os.path.join(parent_dir, "datasets")
@@ -32,7 +29,7 @@ def main():
     if not os.path.exists(extracted_dir):
         os.mkdir(extracted_dir)
 
-    with tarfile.open(archive_path, "r:gz") as tar:
+    with tarfile.open(filename, "r:gz") as tar:
         tar.extractall(path=extracted_dir)
 
     # Create the SQLite database inside the same directory

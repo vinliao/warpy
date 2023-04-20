@@ -29,7 +29,7 @@ def upload_to_s3(file_name: str, bucket_name: str, object_name: str):
 
 
 def main():
-    tar_gz_file_path = "datasets.tar.gz"
+    tar_gz_file_path = "1681979704072.tar.gz"
     tar_gz_file_name = os.path.basename(tar_gz_file_path)
 
     # Set the S3 bucket name

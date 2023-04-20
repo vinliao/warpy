@@ -42,4 +42,4 @@ python main.py query --raw "yoursql.sql"
 python main.py query "get users followers is more than 5k" --csv
 ```
 
-Dataset latest cast timestamp: 1681623420000; dataset highest fid: 12151; dataset highest block number: None; tar.gz shasum: `fc5bad861ed497b0964e9eb7730e3e4d5e4d309f272952edeada20a7a57c049d`.
+Dataset latest cast timestamp: 1681623420000; dataset highest fid: 12151; dataset highest block number: 17071892; tar.gz shasum: `38319a9770743f01a9bed79179f343bfd4879660d51dedfda026247510494a31`.

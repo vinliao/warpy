@@ -1,45 +1,47 @@
-# Warpy (Beta)
+# Warpy (Beta): Farcaster datasets, one API call away
 
-[Farcaster](https://github.com/farcasterxyz/protocol) is an Ethereum-based programmable social network. Warpy provides open-source Farcaster datasets.
+[Farcaster](https://farcaster.xyz) is an Ethereum-based programmable social network. Warpy provides open-source Farcaster datasets.
 
-To see what you can do with the datasets, see [example.ipynb](example.ipynb). To see the data schema, see [models.py](models.py).
+To see what you can do with the datasets and API, see [example.ipynb](example.ipynb). To open the example notebook in Google Colab, use this [link](https://githubtocolab.com/vinliao/warpy/blob/master/example.ipynb). To see the data schema, see [models.py](models.py).
 
-One-command install on MacOS and Linux machines: run `make install`. Windows machines: it's recommended to use [WSL](https://docs.microsoft.com/en-us/windows/wsl/install-win10) and run `make install` there. If you don't want to use `make`, you can run `pip install -r requirements.txt` manually inside a virtual environment.
+## TLDR: the API endpoints
 
-All of `main.py` commands:
+**`/query`**: Execute SQL and natural language queries
 
-```
-Usage: main.py [OPTIONS] COMMAND [ARGS]...
+The `/query` endpoint allows you to execute SELECT, SHOW, DESCRIBE, and EXPLAIN queries in either raw SQL format or natural language (with the help of GPT-4).
 
-Options:
-  --help    Show this message and exit.
-
-Commands:
-  download  Download datasets.
-  env
-  indexer
-  package   Package and zip datasets.
-  query
-  upload    Upload datasets.
-```
-
-Some example commands:
+### Example
 
 ```bash
-# Download the latest dataset
-python main.py download
-
-# Index the latest casts
-python main.py indexer cast
-
-# Set OpenAI environment variables
-python main.py env openai
-
-# Ways to query the database
-python main.py query "get latest cast by dwr"
-python main.py query --raw "select count(*) from users"
-python main.py query --raw "yoursql.sql"
-python main.py query "get users followers is more than 5k" --csv
+curl -X POST \
+     -H "Content-Type: application/json" \
+     -d '{"type": "english",
+          "query": "get latest cast in the farcaster network"}' \
+     https://api.warpy.dev/query
 ```
 
-Dataset latest cast timestamp: 1681623420000; dataset highest fid: 12151; dataset highest block number: 17071892; tar.gz shasum: `38319a9770743f01a9bed79179f343bfd4879660d51dedfda026247510494a31`.
+Parameters
+
+- `type`: The type of query input. Valid values are "raw" for raw SQL queries, "english" for english-to-SQL with GPT-3.5, and "english-advanced" for english-to-SQL with GPT-4 (with more a complex prompt).
+- `query`: The query string in either raw SQL format or natural language.
+- `export`: (Optional) Set the value to "csv" to export the query result as a CSV file. The response will contain an S3 URL to download the file.
+
+Example response:
+
+```json
+{
+  "result": [
+    {
+      "hash": "0x249214e1fe963bdc88a90b351a35e47817e43ea5",
+      "thread_hash": "0xd490a3be27d8ffcc39c7d7343855585e8bf412e9",
+      "text": "and I might have to do something fun with this integration as well 👀🗂️\n\nhttps://twitter.com/ourzora/status/1652040075398586368?s=46&t=8l54n7dYtHePgMrhGh-cUw",
+      "timestamp": 1682714308000,
+      "author_fid": 616,
+      "parent_hash": "0xd490a3be27d8ffcc39c7d7343855585e8bf412e9"
+    }
+  ],
+  "sql": "SELECT * FROM casts ORDER BY timestamp DESC LIMIT 1;",
+  "thoughts": null,
+  "schema": "09e5d80a53a4"
+}
+```

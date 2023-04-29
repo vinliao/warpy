@@ -45,3 +45,5 @@ Example response:
   "schema": "09e5d80a53a4"
 }
 ```
+
+Again, see [example.ipynb](example.ipynb) for more examples. Ping me on Farcaster ([@pixel](https://warpcast.com/pixel)) if you have any questions!

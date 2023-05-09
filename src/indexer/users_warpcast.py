@@ -140,7 +140,8 @@ def main(engine: Engine):
     location_models = [model for model in models if isinstance(model, Location)]
 
     with sessionmaker(bind=engine)() as session:
-        session.bulk_save_objects(location_models)
+        session.query(Location).delete()
+        session.add_all(location_models)
         session.commit()
 
         users_in_db = session.query(User).all()

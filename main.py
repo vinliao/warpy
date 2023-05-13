@@ -1,4 +1,5 @@
 import asyncio
+import gc
 import os
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -27,14 +28,20 @@ def run_casts_warpcast():
 async def run_index_users():
     users_warpcast_main(engine)
     await users_searchcaster_main(engine)
+    engine.dispose()
+    gc.collect()
 
 
 async def run_index_casts():
     casts_warpcast_main(engine)
+    engine.dispose()
+    gc.collect()
 
 
 async def run_index_reactions():
     await reactions_warpcast_main(engine)
+    engine.dispose()
+    gc.collect()
 
 
 scheduler = AsyncIOScheduler()

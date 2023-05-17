@@ -1,3 +1,4 @@
+import asyncio
 import os
 from time import time
 
@@ -51,7 +52,15 @@ async def query(query_data: dict):
             detail="Only SELECT, SHOW, DESCRIBE, and EXPLAIN queries are allowed",
         )
 
-    df = execute_sql(sql)
+    try:
+        df = await asyncio.wait_for(execute_sql(sql), timeout=30)
+    except asyncio.TimeoutError:
+        print("The query took too long to complete. It was cancelled.")
+        return None
+
+    if df is None:
+        raise HTTPException(status_code=500, detail="SQL execution took too long")
+
     result = df.to_dict("records") if df is not None else []
     logger.info(f"SQL: {sql}")
 

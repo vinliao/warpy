@@ -83,26 +83,29 @@ def is_read_only(query: str) -> bool:
     return not any(word in query_upper for word in disallowed_words)
 
 
-def execute_sql(
+async def execute_sql(
     query: str, connection: pymysql.Connection = get_connection()
 ) -> Optional[pd.DataFrame]:
-    if not is_read_only(query):
-        return None
+    async def execute_query(query: str, connection: pymysql.Connection):
+        if not is_read_only(query):
+            return None
 
-    try:
-        with connection.cursor() as cursor:
-            cursor.execute(query)
-            result = cursor.fetchall()
-            column_names = [column[0] for column in cursor.description]
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(query)
+                result = cursor.fetchall()
+                column_names = [column[0] for column in cursor.description]
 
-            if result:
-                df = pd.DataFrame(result, columns=column_names)
-                return df
-            else:
-                return None
-    except Exception as e:
-        print(e)
-        return None
+                if result:
+                    df = pd.DataFrame(result, columns=column_names)
+                    return df
+                else:
+                    return None
+        except Exception as e:
+            print(e)
+            return None
+
+    return await execute_query(query, connection)
 
 
 def text_to_sql(query: str, advanced: bool = False) -> Tuple[Dict, str]:

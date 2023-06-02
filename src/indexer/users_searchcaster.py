@@ -76,13 +76,17 @@ async def main(engine: Engine):
             .all()
         )
 
-        if incomplete_users:
-            json_data = await fetch_data(incomplete_users)
-            update_users(incomplete_users, json_data)
+        BATCH_SIZE = 50
+
+        for i in range(0, len(incomplete_users), BATCH_SIZE):
+            batch_users = incomplete_users[i : i + BATCH_SIZE]
+
+            json_data = await fetch_data(batch_users)
+            update_users(batch_users, json_data)
             session.commit()
 
-            # Delete unregistered users after updating the users
-            session.query(User).filter(
-                User.registered_at.in_(INCOMPLETE_USER_SENTINELS)
-            ).delete()
-            session.commit()
+        # Delete unregistered users after updating the users
+        session.query(User).filter(
+            User.registered_at.in_(INCOMPLETE_USER_SENTINELS)
+        ).delete()
+        session.commit()

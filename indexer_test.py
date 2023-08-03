@@ -41,23 +41,20 @@ async def test_user_integration():
     def make_fids(df1, df2) -> List[int]:
         return list(set(df1["fid"].tolist() + df2["fid"].tolist()))
 
-    def make_query(st: str):
-        return f"SELECT * FROM read_json_auto('testdata/{st}.ndjson')"
-
     async def fetch_write(st: str, fids: List[int]):
         urls = [indexer.url_maker(st)(fid) for fid in fids]
         async with aiohttp.ClientSession() as session:
             users = await indexer.fetcher(st)(session, urls)
             json_append(f"testdata/{st}.ndjson", users)
 
-    ints1 = r_ints(10)
-    await fetch_write("user_warpcast", ints1)
-    await fetch_write("user_searchcaster", ints1)
-
-    # TODO: simplify
     wf = "testdata/user_warpcast.ndjson"
     sf = "testdata/user_searchcaster.ndjson"
     uf = "testdata/users.parquet"
+
+    # test merge warpcast with searchcaster
+    ints1 = r_ints(10) + [3]
+    await fetch_write("user_warpcast", ints1)
+    await fetch_write("user_searchcaster", ints1)
     w_df = pd.read_json(wf, lines=True, dtype_backend="pyarrow")
     s_df = pd.read_json(sf, lines=True, dtype_backend="pyarrow")
     fids = make_fids(w_df, s_df)
@@ -65,12 +62,11 @@ async def test_user_integration():
     assert isinstance(w_df, pd.DataFrame)
     assert isinstance(s_df, pd.DataFrame)
     assert isinstance(df, pd.DataFrame)
-
     assert len(df) == len(w_df) == len(s_df)
     assert set(df["fid"]).issubset(set(fids))
     assert len(df.columns) == len(w_df.columns) + len(s_df.columns) - 1
 
-    # test merge with local here
+    # test merge local parquet with incoming data
     os.remove("testdata/user_warpcast.ndjson")
     os.remove("testdata/user_searchcaster.ndjson")
     df.to_parquet("testdata/users.parquet")
@@ -93,40 +89,44 @@ async def test_user_integration():
     assert all(isinstance(user, indexer.User) for user in users)
 
 
-# # WIP
-# @pytest.mark.asyncio
-# async def test_cast_reaction_integration():
-#     cast_limit = 100
+# WIP
+@pytest.mark.asyncio
+async def test_cast_reaction_integration():
+    cast_limit = 100
 
-#     async with aiohttp.ClientSession() as session:
-#         st = "cast_warpcast"
-#         url = indexer.url_maker(st)(limit=cast_limit)
-#         data = await indexer.fetcher(st)(session, url)
-#         json_append(f"testdata/{st}.ndjson", data["casts"])
+    async with aiohttp.ClientSession() as session:
+        st = "cast_warpcast"
+        url = indexer.url_maker(st)(limit=cast_limit)
+        data = await indexer.fetcher(st)(session, url)
+        json_append(f"testdata/{st}.ndjson", data["casts"])
 
-#         url = indexer.url_maker(st)(data["next_cursor"], limit=cast_limit)
-#         data = await indexer.fetcher(st)(session, url)
-#         json_append(f"testdata/{st}.ndjson", data["casts"])
+        url = indexer.url_maker(st)(data["next_cursor"], limit=cast_limit)
+        data = await indexer.fetcher(st)(session, url)
+        json_append(f"testdata/{st}.ndjson", data["casts"])
 
-#         hash_query = "SELECT hash FROM read_json_auto('testdata/cast_warpcast.ndjson')"
-#         hashes = utils._execute_query(hash_query)
+        hash_query = "SELECT hash FROM read_json_auto('testdata/cast_warpcast.ndjson')"
+        hashes = indexer.execute_query(hash_query)
 
-#         st = "reaction_warpcast"
-#         urls = [indexer.url_maker(st)(hash) for hash in hashes]
-#         data = await indexer.fetcher(st)(session, urls)
-#         for cast in data:
-#             json_append(f"testdata/{st}.ndjson", cast["reactions"])
+        st = "reaction_warpcast"
+        urls = [indexer.url_maker(st)(hash) for hash in hashes]
+        data = await indexer.fetcher(st)(session, urls)
+        for cast in data:
+            json_append(f"testdata/{st}.ndjson", cast["reactions"])
 
-#     # make a bunch of asserts
-#     # 1. check that the number of casts is correct
-#     cast_query = "SELECT * FROM read_json_auto('testdata/cast_warpcast.ndjson')"
-#     reaction_query = "SELECT * FROM read_json_auto('testdata/reaction_warpcast.ndjson')"
-#     cast_df = utils._execute_query_df(cast_query)
-#     reaction_df = utils._execute_query_df(reaction_query)
+    # make a bunch of asserts
+    cast_df = pd.read_json(
+        "testdata/cast_warpcast.ndjson", lines=True, dtype_backend="pyarrow"
+    )
+    reaction_df = pd.read_json(
+        "testdata/reaction_warpcast.ndjson", lines=True, dtype_backend="pyarrow"
+    )
 
-#     assert len(cast_df) == cast_limit * 2
-#     assert reaction_df["hash"].is_unique
-#     assert set(reaction_df["target_hash"]).issubset(set(cast_df["hash"]))
+    assert len(cast_df) == cast_limit * 2
+    assert reaction_df["hash"].is_unique
+    assert set(reaction_df["target_hash"]).issubset(set(cast_df["hash"]))
+
+    # TODO: more asserts
+    # TODO: re-fetch again and must merge with parquets
 
 
 # # # TODO: test for queue producer

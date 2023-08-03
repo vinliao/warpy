@@ -39,13 +39,6 @@ class UserSearchcaster(pydantic.BaseModel):
     address: Optional[str]
     registered_at: int
 
-    def __init__(self, **data):
-        # NOTE: pyarrow timestamp dtype int defaults to nanosecond
-        # to_microsecond(registered_at) if microsecond else do nothing
-        if "registered_at" in data and len(str(data["registered_at"])) == 13 + 6:
-            data["registered_at"] //= 100000
-        super().__init__(**data)
-
 
 class UserEnsdata(pydantic.BaseModel):
     address: str
@@ -80,6 +73,14 @@ class ReactionWarpcast(pydantic.BaseModel):
     timestamp: int
     target_hash: str
     reactor_fid: int
+
+
+# NOTE: how to query with "where array"
+# query = """
+#     SELECT images
+#     FROM read_json_auto('queue/cast_warpcast.ndjson')
+#     WHERE array_length(images) = 0;
+# """
 
 
 def execute_query(query: str) -> List[Any]:
@@ -494,9 +495,17 @@ def queue_consumer(source_type):
 def merger(source_type):
     # NOTE: pass in queries, not DataFrames
 
-    def user(wf: str, sf: str, uf: str) -> pd.DataFrame:
+    def user(
+        wf="queue/user_warpcast.ndjson",
+        sf="queue/user_searchcaster.ndjson",
+        uf="data/users.parquet",
+    ) -> pd.DataFrame:
         def make_queued_df(wf: str, sf: str):
-            df1 = pd.read_json(wf, lines=True, dtype_backend="pyarrow")
+            df1 = pd.read_json(
+                wf,
+                lines=True,
+                dtype_backend="pyarrow",
+            )
             df2 = pd.read_json(
                 sf, lines=True, dtype_backend="pyarrow", convert_dates=False
             )

@@ -10,7 +10,6 @@ import pydantic
 import pytest
 
 import indexer
-import utils
 
 
 def json_append(file_path: str, data: list[pydantic.BaseModel]):
@@ -56,14 +55,11 @@ async def test_user_integration():
     await fetch_write("user_searchcaster", ints1)
 
     # TODO: simplify
-    q1 = make_query("user_warpcast")
-    q2 = make_query("user_searchcaster")
-    q3 = "SELECT * FROM read_parquet('testdata/users.parquet')"
     wf = "testdata/user_warpcast.ndjson"
     sf = "testdata/user_searchcaster.ndjson"
     uf = "testdata/users.parquet"
-    w_df = utils._execute_query_df(q1)
-    s_df = utils._execute_query_df(q2)
+    w_df = pd.read_json(wf, lines=True, dtype_backend="pyarrow")
+    s_df = pd.read_json(sf, lines=True, dtype_backend="pyarrow")
     fids = make_fids(w_df, s_df)
     df = indexer.merger("user")(wf, sf, uf)
     assert isinstance(w_df, pd.DataFrame)
@@ -82,8 +78,10 @@ async def test_user_integration():
     await fetch_write("user_warpcast", ints2)
     await fetch_write("user_searchcaster", ints2)
 
-    new_w_df = utils._execute_query_df(q1)
-    new_s_df = utils._execute_query_df(q2)
+    new_w_df = pd.read_json(wf, lines=True, dtype_backend="pyarrow")
+    new_s_df = pd.read_json(
+        sf, lines=True, dtype_backend="pyarrow", convert_dates=False
+    )
     new_fids = make_fids(new_w_df, new_s_df)
     assert isinstance(new_w_df, pd.DataFrame)
     assert isinstance(new_s_df, pd.DataFrame)

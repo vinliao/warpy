@@ -498,17 +498,11 @@ def merger(source_type):
         def make_queued_df(wf: str, sf: str):
             df1 = pd.read_json(wf, lines=True, dtype_backend="pyarrow")
             df2 = pd.read_json(
-                sf,
-                lines=True,
-                dtype_backend="pyarrow",
-                dtype={"registered_at": "int"},
+                sf, lines=True, dtype_backend="pyarrow", convert_dates=False
             )
 
             df1 = df1.drop_duplicates(subset=["fid"])
             df2 = df2.drop_duplicates(subset=["fid"])
-            df2["registered_at"] = df2["registered_at"].astype(str)
-            df2["registered_at"] = df2["registered_at"].str[:-6]
-            df2["registered_at"] = df2["registered_at"].astype(int)
             return pd.merge(df1, df2, on="fid", how="left")
 
         try:

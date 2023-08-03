@@ -45,6 +45,10 @@ build/
 # Ignore all .sql files
 *.sql
 *.csv
+*.json
+*.ndjson
 
-# Ignore all vcr.py files
-/cassettes
+# Ignore all dirs starts with "data"
+data*
+queue*
+playground.py

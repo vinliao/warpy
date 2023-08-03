@@ -1,8 +1,3 @@
-.PHONY: install
-install:
-	python -m venv venv
-	. venv/bin/activate && pip install -r requirements.txt
-
 .PHONY: format
 format:
 	source venv/bin/activate && \
@@ -15,9 +10,3 @@ lint:
 	source venv/bin/activate && \
 	ruff check . && \
 	vulture . --min-confidence 80 --exclude venv
-	mypy . --check-untyped-defs
-
-.PHONY: dev
-dev:
-	source venv/bin/activate && \
-	uvicorn src.app.api:app --reload

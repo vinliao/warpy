@@ -7,7 +7,6 @@ from typing import Any, List, Optional, Tuple
 import aiohttp
 import duckdb
 import pandas as pd
-import pyarrow
 import pydantic
 import requests
 from dotenv import load_dotenv
@@ -55,8 +54,6 @@ class User(UserWarpcast, UserSearchcaster):
     pass
 
 
-# TODO: add mentions
-# mentions: List[int] (fid)
 class CastWarpcast(pydantic.BaseModel):
     hash: str
     thread_hash: str
@@ -64,7 +61,9 @@ class CastWarpcast(pydantic.BaseModel):
     timestamp: int
     author_fid: int
     parent_hash: Optional[str]
-    images: List[str]
+    # TODO:
+    # images: List[str]
+    # mentions: List[int]
 
 
 class ReactionWarpcast(pydantic.BaseModel):
@@ -88,9 +87,9 @@ def execute_query(query: str) -> List[Any]:
     return list(filter(None, [x[0] for x in con.execute(query).fetchall()]))
 
 
-def execute_query_df(query: str) -> pyarrow.Table:
+def execute_query_df(query: str) -> pd.DataFrame:
     con = duckdb.connect(database=":memory:")
-    return con.execute(query).fetch_arrow_table()
+    return con.execute(query).fetchdf()
 
 
 def make_request(url: str) -> dict:
@@ -494,20 +493,24 @@ def queue_consumer(source_type):
 # TODO: s/pd.dataframe/pyarrow.table to preseve dtypes properly
 def merger(source_type):
     # NOTE: pass in queries, not DataFrames
+    # NOTE: ideally df should only happen here, queries should use duckdb+values
 
     def user(
-        wf="queue/user_warpcast.ndjson",
-        sf="queue/user_searchcaster.ndjson",
-        uf="data/users.parquet",
+        warpcast_file="queue/user_warpcast.ndjson",
+        searchcaster_file="queue/user_searchcaster.ndjson",
+        user_file="data/users.parquet",
     ) -> pd.DataFrame:
-        def make_queued_df(wf: str, sf: str):
+        def make_queued_df(warpcast_file: str, searchcaster_file: str):
             df1 = pd.read_json(
-                wf,
+                warpcast_file,
                 lines=True,
                 dtype_backend="pyarrow",
             )
             df2 = pd.read_json(
-                sf, lines=True, dtype_backend="pyarrow", convert_dates=False
+                searchcaster_file,
+                lines=True,
+                dtype_backend="pyarrow",
+                convert_dates=False,
             )
 
             df1 = df1.drop_duplicates(subset=["fid"])
@@ -515,31 +518,49 @@ def merger(source_type):
             return pd.merge(df1, df2, on="fid", how="left")
 
         try:
-            df = pd.read_parquet(uf, dtype_backend="pyarrow")
+            df = pd.read_parquet(user_file, dtype_backend="pyarrow")
         except Exception:
             df = pd.DataFrame()
 
-        df = pd.concat([df, make_queued_df(wf, sf)])
-        return df.drop_duplicates(subset=["fid"])
+        df = pd.concat([df, make_queued_df(warpcast_file, searchcaster_file)])
+        df = df.drop_duplicates(subset=["fid"])
+        return df
 
-    # def cast():
-    #     data_query = "SELECT * FROM read_parquet('data/casts.parquet')"
-    #     queue_query = "SELECT * FROM read_json_auto('queue/cast_warpcast.ndjson')"
-    #     df = pd.concat([execute_query_df(data_query), execute_query_df(queue_query)])
-    #     df = df.drop_duplicates(subset=["hash"])
-    #     df = df.drop(columns=["images"])  # temp solution
-    #     df.to_parquet("data/casts.parquet", index=False)
+    # def cast(
+    #     queued_file="queue/cast_warpcast.ndjson", data_file="data/casts.parquet"
+    # ) -> pd.DataFrame:
+    #     queued_df = pd.read_json(
+    #         queued_file, lines=True, dtype_backend="pyarrow", convert_dates=False
+    #     )
 
-    # def reaction():
-    #     data_query = "SELECT * FROM read_parquet('data/reactions.parquet')"
-    #     queue_query = "SELECT * FROM read_json_auto('queue/reaction_warpcast.ndjson')"
-    #     df = pd.concat([execute_query_df(data_query), execute_query_df(queue_query)])
+    #     try:
+    #         df = pd.read_parquet(data_file, dtype_backend="pyarrow")
+    #     except Exception:
+    #         df = pd.DataFrame()
+
+    #     df = pd.concat([df, queued_df])
     #     df = df.drop_duplicates(subset=["hash"])
-    #     df.to_parquet("data/reactions.parquet", index=False)
+    #     df = df.drop(columns=["images"]) if "images" in df.columns else df
+    #     return df
+
+    def cast_reaction(queued_file, data_file) -> pd.DataFrame:
+        queued_df = pd.read_json(
+            queued_file, lines=True, dtype_backend="pyarrow", convert_dates=False
+        )
+
+        try:
+            df = pd.read_parquet(data_file, dtype_backend="pyarrow")
+        except Exception:
+            df = pd.DataFrame()
+
+        df = pd.concat([df, queued_df])
+        df = df.drop_duplicates(subset=["hash"])
+        return df
 
     fn_map = {
         "user": user,
-        # "cast": cast,
+        "cast": cast_reaction,
+        "reaction": cast_reaction,
         # "reaction": reaction,
         # "user_warpcast": user,
         # "user_searchcaster": user,

@@ -1,3 +1,5 @@
+# TODO: queue producer and consumer
+
 import glob
 import json
 import os
@@ -35,6 +37,12 @@ def setup_and_teardown():
 
 @pytest.mark.asyncio
 async def test_user_integration():
+    """
+    What's tested:
+    - both user fetcher fetches and extracts properly (returns pydantic model)
+    - merger merges properly (warpcast+searchcaster and parquet+ndjson)
+    """
+
     def r_ints(n: int) -> List[int]:
         return [random.randint(1, 10000) for i in range(n)]
 
@@ -47,18 +55,18 @@ async def test_user_integration():
             users = await indexer.fetcher(st)(session, urls)
             json_append(f"testdata/{st}.ndjson", users)
 
-    wf = "testdata/user_warpcast.ndjson"
-    sf = "testdata/user_searchcaster.ndjson"
-    uf = "testdata/users.parquet"
+    warpcast_file = "testdata/user_warpcast.ndjson"
+    searchcaster_file = "testdata/user_searchcaster.ndjson"
+    user_file = "testdata/users.parquet"
 
     # test merge warpcast with searchcaster
     ints1 = r_ints(10) + [3]
     await fetch_write("user_warpcast", ints1)
     await fetch_write("user_searchcaster", ints1)
-    w_df = pd.read_json(wf, lines=True, dtype_backend="pyarrow")
-    s_df = pd.read_json(sf, lines=True, dtype_backend="pyarrow")
+    w_df = pd.read_json(warpcast_file, lines=True, dtype_backend="pyarrow")
+    s_df = pd.read_json(searchcaster_file, lines=True, dtype_backend="pyarrow")
     fids = make_fids(w_df, s_df)
-    df = indexer.merger("user")(wf, sf, uf)
+    df = indexer.merger("user")(warpcast_file, searchcaster_file, user_file)
     assert isinstance(w_df, pd.DataFrame)
     assert isinstance(s_df, pd.DataFrame)
     assert isinstance(df, pd.DataFrame)
@@ -67,73 +75,93 @@ async def test_user_integration():
     assert len(df.columns) == len(w_df.columns) + len(s_df.columns) - 1
 
     # test merge local parquet with incoming data
-    os.remove("testdata/user_warpcast.ndjson")
-    os.remove("testdata/user_searchcaster.ndjson")
-    df.to_parquet("testdata/users.parquet")
+    os.remove(warpcast_file)
+    os.remove(searchcaster_file)
+    df.to_parquet(user_file)
     ints2 = r_ints(5)
     await fetch_write("user_warpcast", ints2)
     await fetch_write("user_searchcaster", ints2)
 
-    new_w_df = pd.read_json(wf, lines=True, dtype_backend="pyarrow")
+    new_w_df = pd.read_json(warpcast_file, lines=True, dtype_backend="pyarrow")
     new_s_df = pd.read_json(
-        sf, lines=True, dtype_backend="pyarrow", convert_dates=False
+        searchcaster_file, lines=True, dtype_backend="pyarrow", convert_dates=False
     )
     new_fids = make_fids(new_w_df, new_s_df)
     assert isinstance(new_w_df, pd.DataFrame)
     assert isinstance(new_s_df, pd.DataFrame)
     assert len(new_w_df) == len(new_s_df)
 
-    new_df = indexer.merger("user")(wf, sf, uf)
+    new_df = indexer.merger("user")(warpcast_file, searchcaster_file, user_file)
     assert sorted(new_df["fid"].tolist()) == sorted(fids + new_fids)
     users = list(map(lambda x: indexer.User(**x), new_df.to_dict("records")))
     assert all(isinstance(user, indexer.User) for user in users)
 
 
-# WIP
 @pytest.mark.asyncio
 async def test_cast_reaction_integration():
-    cast_limit = 100
+    """
+    What's tested:
+    - cast fetcher, merger
+    - reaction fetcher (from fetched cast hashes), merger
+    """
+
+    cast_limit = 10
 
     async with aiohttp.ClientSession() as session:
-        st = "cast_warpcast"
-        url = indexer.url_maker(st)(limit=cast_limit)
-        data = await indexer.fetcher(st)(session, url)
-        json_append(f"testdata/{st}.ndjson", data["casts"])
+        c_queued_file = "testdata/cast_warpcast.ndjson"
+        c_data_file = "testdata/casts.parquet"
 
-        url = indexer.url_maker(st)(data["next_cursor"], limit=cast_limit)
-        data = await indexer.fetcher(st)(session, url)
-        json_append(f"testdata/{st}.ndjson", data["casts"])
+        url = indexer.url_maker("cast_warpcast")(limit=cast_limit)
+        data = await indexer.fetcher("cast_warpcast")(session, url)
+        json_append(c_queued_file, data["casts"])
 
-        hash_query = "SELECT hash FROM read_json_auto('testdata/cast_warpcast.ndjson')"
-        hashes = indexer.execute_query(hash_query)
+        df = indexer.merger("cast")(c_queued_file, c_data_file)
+        assert isinstance(df, pd.DataFrame)
+        assert len(df) == cast_limit
+        # TODO: maybe more asserts here
 
-        st = "reaction_warpcast"
-        urls = [indexer.url_maker(st)(hash) for hash in hashes]
-        data = await indexer.fetcher(st)(session, urls)
+        os.remove(c_queued_file)
+        df.to_parquet(c_data_file)
+
+        # test merge with local parquet
+        url = indexer.url_maker("cast_warpcast")(data["next_cursor"], cast_limit)
+        data = await indexer.fetcher("cast_warpcast")(session, url)
+        json_append(c_queued_file, data["casts"])
+        df = indexer.merger("cast")(c_queued_file, c_data_file)
+        assert isinstance(df, pd.DataFrame)
+        assert len(df) == cast_limit * 2
+        assert len(set(list(df["hash"]))) == cast_limit * 2
+
+        casts = list(map(lambda x: indexer.CastWarpcast(**x), df.to_dict("records")))
+        assert all(isinstance(cast, indexer.CastWarpcast) for cast in casts)
+
+        # test fetching reactions
+        r_queued_file = "testdata/reaction_warpcast.ndjson"
+        r_data_file = "testdata/reactions.parquet"
+
+        hashes = list(df["hash"])
+        urls = [indexer.url_maker("reaction_warpcast")(hash) for hash in hashes]
+        data = await indexer.fetcher("reaction_warpcast")(session, urls)
         for cast in data:
-            json_append(f"testdata/{st}.ndjson", cast["reactions"])
+            json_append(r_queued_file, cast["reactions"])
 
-    # make a bunch of asserts
-    cast_df = pd.read_json(
-        "testdata/cast_warpcast.ndjson", lines=True, dtype_backend="pyarrow"
-    )
-    reaction_df = pd.read_json(
-        "testdata/reaction_warpcast.ndjson", lines=True, dtype_backend="pyarrow"
-    )
-
-    assert len(cast_df) == cast_limit * 2
-    assert reaction_df["hash"].is_unique
-    assert set(reaction_df["target_hash"]).issubset(set(cast_df["hash"]))
-
-    # TODO: more asserts
-    # TODO: re-fetch again and must merge with parquets
+        df = indexer.merger("reaction")(r_queued_file, r_data_file)
+        assert isinstance(df, pd.DataFrame)
+        assert set(df["target_hash"]).issubset(set(hashes))
+        reactions = list(
+            map(lambda x: indexer.ReactionWarpcast(**x), df.to_dict("records"))
+        )
+        assert all(
+            isinstance(reaction, indexer.ReactionWarpcast) for reaction in reactions
+        )
+        # TODO: maybe more asserts here
 
 
-# # # TODO: test for queue producer
-# # # 1. if no cast, must return 0
-# # # 2. then for all users and stuff, must return the right fid set
-# # # 3. reactions too, must return the correct hash set
+# TODO: test for queue producer
+# 1. if no cast, must return 0
+# 2. then for all users and stuff, must return the right fid set
+# 3. reactions too, must return the correct hash set
 
 
-# # async def test_queue_producer():
-# #     indexer.queue_producer("cast_warpcast")
+# async def test_queue_producer():
+#     indexer.queue_producer("cast_warpcast")

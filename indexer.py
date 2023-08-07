@@ -333,8 +333,23 @@ def queue_producer(source_type):
 
     def _get_addresses(file_path: str) -> List[str]:
         file_format = file_path.split(".")[-1]
-        file_format_str = file_format if file_format != "json" else "ndjson"
-        query = f"SELECT address FROM read_{file_format_str}_auto('{file_path}')"
+        if file_format == "ndjson" or file_format == "json":
+            query = f"SELECT address FROM read_json_auto('{file_path}')"
+        else:
+            query = f"SELECT address FROM read_parquet('{file_path}')"
+
+        try:
+            return execute_query(query)
+        except Exception as e:
+            print(e)
+            return []
+
+    def _get_hashes(file_path: str) -> List[str]:
+        file_format = file_path.split(".")[-1]
+        if file_format == "ndjson" or file_format == "json":
+            query = f"SELECT hash FROM read_json_auto('{file_path}')"
+        else:
+            query = f"SELECT hash FROM read_parquet('{file_path}')"
 
         try:
             return execute_query(query)
@@ -396,32 +411,21 @@ def queue_producer(source_type):
             print(f"Error: {e}")
             return 0
 
-    # TODO: rewrite and simplify
+    # TODO: simplify-able
     def reaction_warpcast(
         t_from=utils.days_ago_to_unixms(32),  # more than 1 month
         t_until=utils.ms_now(),
+        data_file="data/casts.parquet",
     ) -> List[Tuple[str, Optional[str]]]:
-        # TODO: simplify this, maybe use something like the _safe_get_fids above
-        query = f"""
-        WITH
-            casts AS (
-                SELECT "hash", timestamp
-                FROM read_parquet('data/casts.parquet')
-            ),
-            warpcasts AS (
-                SELECT "hash", timestamp
-                FROM read_json_auto('queue/cast_warpcast.ndjson')
-            )
-        SELECT "hash"
-        FROM (
-            SELECT * FROM casts
-            UNION ALL
-            SELECT * FROM warpcasts
-        ) AS combined
-        WHERE timestamp >= {t_from} AND timestamp < {t_until}
-        """
-        r: List[str] = execute_query(query)
-        return [(hash, None) for hash in list(set(r))]
+        query = f"SELECT hash FROM read_parquet('{data_file}') "
+        query += f"WHERE timestamp >= {t_from} AND timestamp < {t_until}"
+        try:
+            cast_hashes = execute_query(query)
+            cast_hashes = list(set(cast_hashes))
+            return [(hash, None) for hash in cast_hashes]
+        except Exception as e:
+            print(f"Error: {e}")
+            return []
 
     fn_map = {
         "user_warpcast": user_warpcast,

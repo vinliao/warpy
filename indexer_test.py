@@ -193,21 +193,18 @@ def test_queue_producer():
     # ==================================================================================
     # cast and reactions
     # ==================================================================================
-    # TODO: test for queue producer
-    # 1. if no cast, must return 0
-    # 3. reactions too, must return the correct hash set
+
     def random_hash(n):
         return "".join(random.choices(string.ascii_letters + string.digits, k=n))
 
     one_week_ago = utils.weeks_ago_to_unixms(1)
-    two_weeks_ago = utils.weeks_ago_to_unixms(2)
     expected_hash_1 = random_hash(6)
     expected_hash_2 = random_hash(6)
     dummy_casts = [
-        {"hash": random_hash(6), "timestamp": one_week_ago},
-        {"hash": random_hash(6), "timestamp": two_weeks_ago},
-        {"hash": expected_hash_1, "timestamp": utils.weeks_ago_to_unixms(3)},
-        {"hash": expected_hash_2, "timestamp": utils.weeks_ago_to_unixms(4)},
+        {"hash": expected_hash_1, "timestamp": one_week_ago},
+        {"hash": expected_hash_2, "timestamp": utils.weeks_ago_to_unixms(2)},
+        {"hash": random_hash(6), "timestamp": utils.weeks_ago_to_unixms(3)},
+        {"hash": random_hash(6), "timestamp": utils.weeks_ago_to_unixms(4)},
     ]
 
     c_file = "testdata/casts.parquet"
@@ -221,8 +218,8 @@ def test_queue_producer():
     c_queued_max_timestamp = indexer.queue_producer("cast_warpcast")(c_file)
     assert c_queued_max_timestamp == one_week_ago
 
-    # NOTE: tests not done because reactions fetcher is kinda broken
-    # r_queued_hashes = indexer.queue_producer("reaction_warpcast")(t_from=two_weeks_ago)
-    # expected_hashes_tuple = [(expected_hash_1, None), (expected_hash_2, None)]
-    # assert set(r_queued_hashes) == set(expected_hashes_tuple)
-
+    reaction_queue_producer = indexer.queue_producer("reaction_warpcast")
+    t = utils.weeks_ago_to_unixms(2) - utils.days_to_ms(1)
+    r_queued_hashes = reaction_queue_producer(t_from=t, data_file=c_file)
+    expected_hashes_tuple = [(expected_hash_1, None), (expected_hash_2, None)]
+    assert set(r_queued_hashes) == set(expected_hashes_tuple)

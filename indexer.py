@@ -2,7 +2,7 @@ import asyncio
 import json
 import os
 import time
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Tuple
 
 import aiohttp
 import duckdb
@@ -386,48 +386,49 @@ def queue_producer(source_type):
     #         set(searchcaster_addresses) - set(ensdata_addresses + forbidden_addresses)
     #     )
 
-    # def cast_warpcast(filepath="data/casts.parquet") -> int:
-    #     # NOTE: once queue is consuming, can't stop and resume
-    #     query = f"SELECT MAX(timestamp) FROM read_parquet('{filepath}')"
-    #     try:
-    #         r: List[int] = execute_query(query)  # a list of one element
-    #         return r[0] if r else 0
-    #     except Exception as e:
-    #         print(f"Error: {e}")
-    #         return 0
+    def cast_warpcast(filepath="data/casts.parquet") -> int:
+        # NOTE: once queue is consuming, can't stop and resume
+        query = f"SELECT MAX(timestamp) FROM read_parquet('{filepath}')"
+        try:
+            r: List[int] = execute_query(query)  # a list of one element
+            return r[0] if r else 0
+        except Exception as e:
+            print(f"Error: {e}")
+            return 0
 
-    # def reaction_warpcast(
-    #     t_from=utils.days_ago_to_unixms(32),  # more than 1 month
-    #     t_until=utils.ms_now(),
-    # ) -> List[Tuple[str, Optional[str]]]:
-    #     # TODO: simplify this, maybe use something like the _safe_get_fids above
-    #     query = f"""
-    #     WITH
-    #         casts AS (
-    #             SELECT "hash", timestamp
-    #             FROM read_parquet('data/casts.parquet')
-    #         ),
-    #         warpcasts AS (
-    #             SELECT "hash", timestamp
-    #             FROM read_json_auto('queue/cast_warpcast.ndjson')
-    #         )
-    #     SELECT "hash"
-    #     FROM (
-    #         SELECT * FROM casts
-    #         UNION ALL
-    #         SELECT * FROM warpcasts
-    #     ) AS combined
-    #     WHERE timestamp >= {t_from} AND timestamp < {t_until}
-    #     """
-    #     r: List[str] = execute_query(query)
-    #     return [(hash, None) for hash in list(set(r))]
+    # TODO: rewrite and simplify
+    def reaction_warpcast(
+        t_from=utils.days_ago_to_unixms(32),  # more than 1 month
+        t_until=utils.ms_now(),
+    ) -> List[Tuple[str, Optional[str]]]:
+        # TODO: simplify this, maybe use something like the _safe_get_fids above
+        query = f"""
+        WITH
+            casts AS (
+                SELECT "hash", timestamp
+                FROM read_parquet('data/casts.parquet')
+            ),
+            warpcasts AS (
+                SELECT "hash", timestamp
+                FROM read_json_auto('queue/cast_warpcast.ndjson')
+            )
+        SELECT "hash"
+        FROM (
+            SELECT * FROM casts
+            UNION ALL
+            SELECT * FROM warpcasts
+        ) AS combined
+        WHERE timestamp >= {t_from} AND timestamp < {t_until}
+        """
+        r: List[str] = execute_query(query)
+        return [(hash, None) for hash in list(set(r))]
 
     fn_map = {
         "user_warpcast": user_warpcast,
         "user_searchcaster": user_searchcaster,
         # "user_ensdata": user_ensdata,
-        # "cast_warpcast": cast_warpcast,
-        # "reaction_warpcast": reaction_warpcast,
+        "cast_warpcast": cast_warpcast,
+        "reaction_warpcast": reaction_warpcast,
     }
 
     return fn_map[source_type]

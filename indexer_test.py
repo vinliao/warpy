@@ -1,9 +1,8 @@
-# TODO: queue producer and consumer
-
 import glob
 import json
 import os
 import random
+import string
 from typing import List
 
 import aiohttp
@@ -12,6 +11,7 @@ import pydantic
 import pytest
 
 import indexer
+import utils
 
 
 def json_append(file_path: str, data: list[pydantic.BaseModel]):
@@ -38,7 +38,6 @@ def setup_and_teardown():
             os.remove(file)
 
 
-@pytest.mark.skip(reason="Writing other tests")
 @pytest.mark.asyncio
 async def test_user_integration():
     """
@@ -101,7 +100,6 @@ async def test_user_integration():
     assert all(isinstance(user, indexer.User) for user in users)
 
 
-@pytest.mark.skip(reason="Writing other tests")
 @pytest.mark.asyncio
 async def test_cast_reaction_integration():
     """
@@ -163,9 +161,9 @@ async def test_cast_reaction_integration():
 
 
 def test_queue_producer():
-    # TODO: test for queue producer
-    # 1. if no cast, must return 0
-    # 3. reactions too, must return the correct hash set
+    # ==================================================================================
+    # users
+    # ==================================================================================
 
     fids = [random.randint(1, 10000) for i in range(1000)]
     fids_dict = [{"fid": fid} for fid in fids]
@@ -191,4 +189,40 @@ def test_queue_producer():
 
     s_queued_fids = indexer.queue_producer("user_searchcaster")(uw_file, us_file)
     assert sorted(set(s_queued_fids)) == sorted(set(fids) - set(half_fids))
+
+    # ==================================================================================
+    # cast and reactions
+    # ==================================================================================
+    # TODO: test for queue producer
+    # 1. if no cast, must return 0
+    # 3. reactions too, must return the correct hash set
+    def random_hash(n):
+        return "".join(random.choices(string.ascii_letters + string.digits, k=n))
+
+    one_week_ago = utils.weeks_ago_to_unixms(1)
+    two_weeks_ago = utils.weeks_ago_to_unixms(2)
+    expected_hash_1 = random_hash(6)
+    expected_hash_2 = random_hash(6)
+    dummy_casts = [
+        {"hash": random_hash(6), "timestamp": one_week_ago},
+        {"hash": random_hash(6), "timestamp": two_weeks_ago},
+        {"hash": expected_hash_1, "timestamp": utils.weeks_ago_to_unixms(3)},
+        {"hash": expected_hash_2, "timestamp": utils.weeks_ago_to_unixms(4)},
+    ]
+
+    c_file = "testdata/casts.parquet"
+
+    c_queued_max_timestamp = indexer.queue_producer("cast_warpcast")(c_file)
+    assert c_queued_max_timestamp == 0
+
+    df = pd.DataFrame(dummy_casts)
+    df.to_parquet(c_file)
+
+    c_queued_max_timestamp = indexer.queue_producer("cast_warpcast")(c_file)
+    assert c_queued_max_timestamp == one_week_ago
+
+    # NOTE: tests not done because reactions fetcher is kinda broken
+    # r_queued_hashes = indexer.queue_producer("reaction_warpcast")(t_from=two_weeks_ago)
+    # expected_hashes_tuple = [(expected_hash_1, None), (expected_hash_2, None)]
+    # assert set(r_queued_hashes) == set(expected_hashes_tuple)
 

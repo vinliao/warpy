@@ -161,6 +161,11 @@ async def test_cast_reaction_integration():
 
 
 def test_queue_producer():
+    """
+    What's tested:
+    - queue_producer (user, cast, reaction)
+    """
+    
     # ==================================================================================
     # users
     # ==================================================================================

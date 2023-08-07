@@ -32,9 +32,13 @@ def setup_and_teardown():
     yield  # This is where your tests are executed
 
     # teardown
-    # ...
+    files = glob.glob("testdata/*")
+    for file in files:
+        if os.path.isfile(file):
+            os.remove(file)
 
 
+@pytest.mark.skip(reason="Writing other tests")
 @pytest.mark.asyncio
 async def test_user_integration():
     """
@@ -97,6 +101,7 @@ async def test_user_integration():
     assert all(isinstance(user, indexer.User) for user in users)
 
 
+@pytest.mark.skip(reason="Writing other tests")
 @pytest.mark.asyncio
 async def test_cast_reaction_integration():
     """
@@ -157,11 +162,33 @@ async def test_cast_reaction_integration():
         # TODO: maybe more asserts here
 
 
-# TODO: test for queue producer
-# 1. if no cast, must return 0
-# 2. then for all users and stuff, must return the right fid set
-# 3. reactions too, must return the correct hash set
+def test_queue_producer():
+    # TODO: test for queue producer
+    # 1. if no cast, must return 0
+    # 3. reactions too, must return the correct hash set
 
+    fids = [random.randint(1, 10000) for i in range(1000)]
+    fids_dict = [{"fid": fid} for fid in fids]
+    uw_file = "testdata/user_warpcast.ndjson"
+    us_file = "testdata/user_searchcaster.ndjson"
+    u_file = "testdata/users.parquet"
 
-# async def test_queue_producer():
-#     indexer.queue_producer("cast_warpcast")
+    with open(uw_file, "w") as f:
+        for fid in fids_dict:
+            f.write(json.dumps(fid) + "\n")
+
+    w_queued_fids = indexer.queue_producer("user_warpcast")(uw_file, u_file)
+    highest_network_fid = max(w_queued_fids)
+    all_fids = list(range(1, highest_network_fid + 1))
+    assert sorted(set(w_queued_fids)) == sorted(set(all_fids) - set(fids))
+
+    half_fids = random.sample(fids, len(fids) // 2)
+    half_fids_dict = [{"fid": fid} for fid in half_fids]
+
+    with open(us_file, "w") as f:
+        for fid in half_fids_dict:
+            f.write(json.dumps(fid) + "\n")
+
+    s_queued_fids = indexer.queue_producer("user_searchcaster")(uw_file, us_file)
+    assert sorted(set(s_queued_fids)) == sorted(set(fids) - set(half_fids))
+

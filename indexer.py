@@ -2,7 +2,7 @@ import asyncio
 import json
 import os
 import time
-from typing import Any, List, Optional, Tuple
+from typing import Any, List, Optional
 
 import aiohttp
 import duckdb
@@ -64,6 +64,7 @@ class CastWarpcast(pydantic.BaseModel):
     # TODO:
     # images: List[str]
     # mentions: List[int]
+    # FIP 2
 
 
 class ReactionWarpcast(pydantic.BaseModel):
@@ -213,7 +214,7 @@ def extractor(source_type):
             return None
 
     def cast_warpcast(cast: dict) -> CastWarpcast:
-        images = get_in(cast, ["embeds", "images"], [])
+        # images = get_in(cast, ["embeds", "images"], [])
         return CastWarpcast(
             hash=get_in(cast, ["hash"]),
             thread_hash=get_in(cast, ["threadHash"]),
@@ -221,7 +222,6 @@ def extractor(source_type):
             timestamp=get_in(cast, ["timestamp"]),
             author_fid=get_in(cast, ["author", "fid"]),
             parent_hash=get_in(cast, ["parentHash"]),
-            images=[image["sourceUrl"] for image in images],
         )
 
     def reaction_warpcast(reaction: dict) -> ReactionWarpcast:
@@ -318,29 +318,37 @@ def fetcher(source_type):
 # TODO: thoroughly test this
 # TODO: complected
 def queue_producer(source_type):
-    def _safe_get_fids(type: str, file_path: str) -> List[int]:
-        if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
-            query = f"SELECT fid FROM read_{type}_auto('{file_path}')"
-            return execute_query(query)
+    def _get_fids(file_path: str) -> List[int]:
+        file_format = file_path.split(".")[-1]
+        if file_format == "ndjson" or file_format == "json":
+            query = f"SELECT fid FROM read_json_auto('{file_path}')"
         else:
-            print(f"File does not exist or is empty at path: {file_path}")
+            query = f"SELECT fid FROM read_parquet('{file_path}')"
+
+        try:
+            return execute_query(query)
+        except Exception as e:
+            print(e)
             return []
 
-    def _safe_get_addresses(type: str, file_path: str) -> List[str]:
-        if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
-            query = f"SELECT address FROM read_{type}_auto('{file_path}')"
+    def _get_addresses(file_path: str) -> List[str]:
+        file_format = file_path.split(".")[-1]
+        file_format_str = file_format if file_format != "json" else "ndjson"
+        query = f"SELECT address FROM read_{file_format_str}_auto('{file_path}')"
+
+        try:
             return execute_query(query)
-        else:
-            print(f"File does not exist or is empty at path: {file_path}")
+        except Exception as e:
+            print(e)
             return []
 
-    def user_warpcast():
-        def _get_local_fids() -> List[int]:
-            data_path = "data/users.parquet"
-            queue_path = "queue/user_warpcast.ndjson"
-            data_fids = _safe_get_fids("parquet", data_path)
-            queue_fids = _safe_get_fids("json", queue_path)
-            return list(set(data_fids).union(set(queue_fids)))
+    def user_warpcast(
+        queued_file="queue/user_warpcast.ndjson", data_file="data/users.parquet"
+    ):
+        def _get_local_fids(queued_file: str, data_file: str) -> List[int]:
+            fids1 = _get_fids(queued_file)
+            fids2 = _get_fids(data_file)
+            return list(set(fids1).union(set(fids2)))
 
         def _fetch_highest_fid() -> int:
             url = "https://api.warpcast.com/v2/recent-users?limit=1"
@@ -350,73 +358,76 @@ def queue_producer(source_type):
             return json.loads(response.text)["result"]["users"][0]["fid"]
 
         network_fids = range(1, _fetch_highest_fid() + 1)
-        return list(set(network_fids) - set(_get_local_fids()))  # set difference
+        local_fids = _get_local_fids(queued_file, data_file)
+        return list(set(network_fids) - set(local_fids))
 
-    def user_searchcaster() -> List[int]:
-        warpcast_data_path = "queue/user_warpcast.ndjson"
-        searchcaster_data_path = "queue/user_searchcaster.ndjson"
-        warpcast_fids = _safe_get_fids("json", warpcast_data_path)
-        searchcaster_fids = _safe_get_fids("json", searchcaster_data_path)
+    def user_searchcaster(
+        warpcast_queue_file="queue/user_warpcast.ndjson",
+        searchcaster_queue_file="queue/user_searchcaster.ndjson",
+    ) -> List[int]:
+        # NOTE: not including parquet users because it's gonna be be merged with queue
+        warpcast_fids = _get_fids(warpcast_queue_file)
+        searchcaster_fids = _get_fids(searchcaster_queue_file)
         return list(set(warpcast_fids) - set(searchcaster_fids))  # set difference
 
-    def user_ensdata() -> List[str]:
-        searchcaster_data_path = "queue/user_searchcaster.ndjson"
-        ensdata_data_path = "queue/user_ensdata.ndjson"
-        searchcaster_addresses = _safe_get_addresses("json", searchcaster_data_path)
-        ensdata_addresses = _safe_get_addresses("json", ensdata_data_path)
-        # NOTE: ensdata doesn't return these addresses
-        forbidden_addresses = [
-            "0x947caf5ada865ace0c8de0ffd55de0c02e5f6b54",
-            "0xaee33d473c68f9b4946020d79021416ff0587005",
-            "0x2d3fe453caaa7cd2c5475a50b06630dd75f67377",
-            "0xc6735e557cb2c5850708cf00a2dec05da2aa6490",
-        ]
-        return list(
-            set(searchcaster_addresses) - set(ensdata_addresses + forbidden_addresses)
-        )
+    # def user_ensdata() -> List[str]:
+    #     searchcaster_data_path = "queue/user_searchcaster.ndjson"
+    #     ensdata_data_path = "queue/user_ensdata.ndjson"
+    #     searchcaster_addresses = _safe_get_addresses("json", searchcaster_data_path)
+    #     ensdata_addresses = _safe_get_addresses("json", ensdata_data_path)
+    #     # NOTE: ensdata doesn't return these addresses
+    #     forbidden_addresses = [
+    #         "0x947caf5ada865ace0c8de0ffd55de0c02e5f6b54",
+    #         "0xaee33d473c68f9b4946020d79021416ff0587005",
+    #         "0x2d3fe453caaa7cd2c5475a50b06630dd75f67377",
+    #         "0xc6735e557cb2c5850708cf00a2dec05da2aa6490",
+    #     ]
+    #     return list(
+    #         set(searchcaster_addresses) - set(ensdata_addresses + forbidden_addresses)
+    #     )
 
-    def cast_warpcast(filepath="data/casts.parquet") -> int:
-        # NOTE: once queue is consuming, can't stop and resume
-        query = f"SELECT MAX(timestamp) FROM read_parquet('{filepath}')"
-        try:
-            r: List[int] = execute_query(query)  # a list of one element
-            return r[0] if r else 0
-        except Exception as e:
-            print(f"Error: {e}")
-            return 0
+    # def cast_warpcast(filepath="data/casts.parquet") -> int:
+    #     # NOTE: once queue is consuming, can't stop and resume
+    #     query = f"SELECT MAX(timestamp) FROM read_parquet('{filepath}')"
+    #     try:
+    #         r: List[int] = execute_query(query)  # a list of one element
+    #         return r[0] if r else 0
+    #     except Exception as e:
+    #         print(f"Error: {e}")
+    #         return 0
 
-    def reaction_warpcast(
-        t_from=utils.days_ago_to_unixms(32),  # more than 1 month
-        t_until=utils.ms_now(),
-    ) -> List[Tuple[str, Optional[str]]]:
-        # TODO: simplify this, maybe use something like the _safe_get_fids above
-        query = f"""
-        WITH 
-            casts AS (
-                SELECT "hash", timestamp
-                FROM read_parquet('data/casts.parquet')
-            ),
-            warpcasts AS (
-                SELECT "hash", timestamp
-                FROM read_json_auto('queue/cast_warpcast.ndjson')
-            )
-        SELECT "hash"
-        FROM (
-            SELECT * FROM casts
-            UNION ALL
-            SELECT * FROM warpcasts
-        ) AS combined
-        WHERE timestamp >= {t_from} AND timestamp < {t_until}
-        """
-        r: List[str] = execute_query(query)
-        return [(hash, None) for hash in list(set(r))]
+    # def reaction_warpcast(
+    #     t_from=utils.days_ago_to_unixms(32),  # more than 1 month
+    #     t_until=utils.ms_now(),
+    # ) -> List[Tuple[str, Optional[str]]]:
+    #     # TODO: simplify this, maybe use something like the _safe_get_fids above
+    #     query = f"""
+    #     WITH
+    #         casts AS (
+    #             SELECT "hash", timestamp
+    #             FROM read_parquet('data/casts.parquet')
+    #         ),
+    #         warpcasts AS (
+    #             SELECT "hash", timestamp
+    #             FROM read_json_auto('queue/cast_warpcast.ndjson')
+    #         )
+    #     SELECT "hash"
+    #     FROM (
+    #         SELECT * FROM casts
+    #         UNION ALL
+    #         SELECT * FROM warpcasts
+    #     ) AS combined
+    #     WHERE timestamp >= {t_from} AND timestamp < {t_until}
+    #     """
+    #     r: List[str] = execute_query(query)
+    #     return [(hash, None) for hash in list(set(r))]
 
     fn_map = {
         "user_warpcast": user_warpcast,
         "user_searchcaster": user_searchcaster,
-        "user_ensdata": user_ensdata,
-        "cast_warpcast": cast_warpcast,
-        "reaction_warpcast": reaction_warpcast,
+        # "user_ensdata": user_ensdata,
+        # "cast_warpcast": cast_warpcast,
+        # "reaction_warpcast": reaction_warpcast,
     }
 
     return fn_map[source_type]
@@ -426,7 +437,7 @@ def queue_consumer(source_type):
     def json_append(file_path: str, data: list[pydantic.BaseModel]):
         with open(file_path, "a") as f:
             for item in data:
-                json.dump(item.dict(), f)  # type: ignore
+                json.dump(item.model_dump(), f)  # type: ignore
                 f.write("\n")
 
     async def user_queue_consumer(n=100):
@@ -486,14 +497,9 @@ def queue_consumer(source_type):
     return fn_map[source_type]
 
 
-# TODO: maybe have "get_tobe_merged_df" or soemthing, maybe even just the query
-
-
-# TODO: test these!!
-# TODO: s/pd.dataframe/pyarrow.table to preseve dtypes properly
 def merger(source_type):
-    # NOTE: pass in queries, not DataFrames
-    # NOTE: ideally df should only happen here, queries should use duckdb+values
+    # NOTE: ideally DataFrame operations should only happen here,
+    # queries should use duckdb+values and set function on PKs
 
     def user(
         warpcast_file="queue/user_warpcast.ndjson",
@@ -526,23 +532,6 @@ def merger(source_type):
         df = df.drop_duplicates(subset=["fid"])
         return df
 
-    # def cast(
-    #     queued_file="queue/cast_warpcast.ndjson", data_file="data/casts.parquet"
-    # ) -> pd.DataFrame:
-    #     queued_df = pd.read_json(
-    #         queued_file, lines=True, dtype_backend="pyarrow", convert_dates=False
-    #     )
-
-    #     try:
-    #         df = pd.read_parquet(data_file, dtype_backend="pyarrow")
-    #     except Exception:
-    #         df = pd.DataFrame()
-
-    #     df = pd.concat([df, queued_df])
-    #     df = df.drop_duplicates(subset=["hash"])
-    #     df = df.drop(columns=["images"]) if "images" in df.columns else df
-    #     return df
-
     def cast_reaction(queued_file, data_file) -> pd.DataFrame:
         queued_df = pd.read_json(
             queued_file, lines=True, dtype_backend="pyarrow", convert_dates=False
@@ -561,11 +550,10 @@ def merger(source_type):
         "user": user,
         "cast": cast_reaction,
         "reaction": cast_reaction,
-        # "reaction": reaction,
-        # "user_warpcast": user,
-        # "user_searchcaster": user,
-        # "cast_warpcast": cast,
-        # "reaction_warpcast": reaction,
+        "user_warpcast": user,
+        "user_searchcaster": user,
+        "cast_warpcast": cast_reaction,
+        "reaction_warpcast": cast_reaction,
     }
 
     return fn_map[source_type]

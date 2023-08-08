@@ -61,6 +61,7 @@ def _active_users(n=20):
             for fid, count in xs
         ]
 
+    # TODO: figure out a better way than hardcoding date
     t1 = utils.ymd_to_unixms(2023, 7, 1)
     t2 = utils.ymd_to_unixms(2023, 8, 1)
 
@@ -71,13 +72,14 @@ def _active_users(n=20):
         WHERE timestamp >= {t1} AND timestamp < {t2}
     ),
     relevant_casts AS (
-        SELECT author_fid
+        SELECT hash, author_fid
         FROM read_parquet('data/casts.parquet')
         WHERE hash IN (SELECT target_hash FROM relevant_reactions)
     )
-    SELECT author_fid, COUNT(*) AS count
+    SELECT relevant_casts.author_fid, COUNT(*) AS count
     FROM relevant_casts
-    GROUP BY author_fid
+    INNER JOIN relevant_reactions ON relevant_casts.hash =relevant_reactions.target_hash
+    GROUP BY relevant_casts.author_fid
     ORDER BY count DESC
     LIMIT {n}
     """
@@ -87,6 +89,7 @@ def _active_users(n=20):
 
 
 def _cast_reaction_bucket():
+    # TODO: figure out a better way than hardcoding date
     t1 = utils.ymd_to_unixms(2023, 7, 1)
     t2 = utils.ymd_to_unixms(2023, 8, 1)
 

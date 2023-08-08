@@ -75,14 +75,6 @@ class ReactionWarpcast(pydantic.BaseModel):
     reactor_fid: int
 
 
-# NOTE: how to query with "where array"
-# query = """
-#     SELECT images
-#     FROM read_json_auto('queue/cast_warpcast.ndjson')
-#     WHERE array_length(images) = 0;
-# """
-
-
 # ======================================================================================
 # indexer utils
 # ======================================================================================
@@ -100,6 +92,13 @@ def execute_query_df(query: str) -> pd.DataFrame:
 
 def make_request(url: str) -> dict:
     response = requests.get(url)
+    return response.json()
+
+
+def make_warpcast_request(url: str) -> dict:
+    api_key = os.getenv("PICTURE_WARPCAST_API_KEY")
+    headers = {"Authorization": f"Bearer {api_key}"}
+    response = requests.get(url, headers=headers)
     return response.json()
 
 

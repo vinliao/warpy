@@ -163,24 +163,20 @@ def execute_query(query: str) -> List[Any]:
 
 
 def _active_ens_usernames() -> dict:
-    # TODO: can be simplified it seems
     def _stringify_addresses(addresses: List[str]) -> str:
         return "', '".join(list(filter(None, addresses)))
 
-    q1 = "SELECT address FROM read_parquet('data/users.parquet') WHERE is_active = true"
+    q1 = "SELECT address FROM read_parquet('data/users.parquet') "
+    q1 += "WHERE is_active = true"
     r1: List[str] = execute_query(q1)
-    q2 = (
-        "SELECT ens FROM read_json_auto('queue/user_ensdata.ndjson') WHERE address"
-        " IN ('"
-        + _stringify_addresses(r1)
-        + "')"
-    )
+
+    q2 = "SELECT DISTINCT ens FROM read_json_auto('queue/user_ensdata.ndjson') "
+    q2 += "WHERE address IN ('" + _stringify_addresses(r1) + "')"
     r2: List[str] = execute_query(q2)
-    q3 = (
-        "SELECT username FROM read_parquet('data/users.parquet') WHERE username LIKE"
-        " '%.eth' AND is_active = true"
-    )
-    r3 = execute_query(q3)
+
+    q3 = "SELECT username FROM read_parquet('data/users.parquet') "
+    q3 += "WHERE username IN ('" + "', '".join(r2) + "')"
+    r3: List[str] = execute_query(q3)
 
     return {
         "active_users": len(r1),
@@ -211,9 +207,9 @@ def _cast_reaction_bucket():
     return {"casts": daily_bucket(ts1), "reactions": daily_bucket(ts2)}
 
 
-print(_active_users(10))
+# pipes = {
+#     "weekly": [_active_new_users, _active_users, _cast_reaction_count],
+#     "biweekly": [_cast_reaction_count],
+# }
 
-pipes = {
-    "weekly": [_active_new_users, _active_users, _cast_reaction_count],
-    "biweekly": [_cast_reaction_count],
-}
+print(_active_ens_usernames())

@@ -83,6 +83,11 @@ class ReactionWarpcast(pydantic.BaseModel):
 # """
 
 
+# ======================================================================================
+# indexer utils
+# ======================================================================================
+
+
 def execute_query(query: str) -> List[Any]:
     con = duckdb.connect(database=":memory:")
     return list(filter(None, [x[0] for x in con.execute(query).fetchall()]))
@@ -96,6 +101,11 @@ def execute_query_df(query: str) -> pd.DataFrame:
 def make_request(url: str) -> dict:
     response = requests.get(url)
     return response.json()
+
+
+# ======================================================================================
+# indexer
+# ======================================================================================
 
 
 def url_maker(source_type: str):
@@ -315,8 +325,6 @@ def fetcher(source_type):
     return fn_map[source_type]
 
 
-# TODO: thoroughly test this
-# TODO: complected
 def queue_producer(source_type):
     def _get_fids(file_path: str) -> List[int]:
         file_format = file_path.split(".")[-1]
@@ -385,21 +393,22 @@ def queue_producer(source_type):
         searchcaster_fids = _get_fids(searchcaster_queue_file)
         return list(set(warpcast_fids) - set(searchcaster_fids))  # set difference
 
-    # def user_ensdata() -> List[str]:
-    #     searchcaster_data_path = "queue/user_searchcaster.ndjson"
-    #     ensdata_data_path = "queue/user_ensdata.ndjson"
-    #     searchcaster_addresses = _safe_get_addresses("json", searchcaster_data_path)
-    #     ensdata_addresses = _safe_get_addresses("json", ensdata_data_path)
-    #     # NOTE: ensdata doesn't return these addresses
-    #     forbidden_addresses = [
-    #         "0x947caf5ada865ace0c8de0ffd55de0c02e5f6b54",
-    #         "0xaee33d473c68f9b4946020d79021416ff0587005",
-    #         "0x2d3fe453caaa7cd2c5475a50b06630dd75f67377",
-    #         "0xc6735e557cb2c5850708cf00a2dec05da2aa6490",
-    #     ]
-    #     return list(
-    #         set(searchcaster_addresses) - set(ensdata_addresses + forbidden_addresses)
-    #     )
+    # TODO: this code still untested
+    def user_ensdata() -> List[str]:
+        searchcaster_data_path = "queue/user_searchcaster.ndjson"
+        ensdata_data_path = "queue/user_ensdata.ndjson"
+        searchcaster_addresses = _get_addresses(searchcaster_data_path)
+        ensdata_addresses = _get_addresses(ensdata_data_path)
+        # NOTE: ensdata doesn't return these addresses
+        forbidden_addresses = [
+            "0x947caf5ada865ace0c8de0ffd55de0c02e5f6b54",
+            "0xaee33d473c68f9b4946020d79021416ff0587005",
+            "0x2d3fe453caaa7cd2c5475a50b06630dd75f67377",
+            "0xc6735e557cb2c5850708cf00a2dec05da2aa6490",
+        ]
+        return list(
+            set(searchcaster_addresses) - set(ensdata_addresses + forbidden_addresses)
+        )
 
     def cast_warpcast(filepath="data/casts.parquet") -> int:
         # NOTE: once queue is consuming, can't stop and resume
@@ -430,7 +439,7 @@ def queue_producer(source_type):
     fn_map = {
         "user_warpcast": user_warpcast,
         "user_searchcaster": user_searchcaster,
-        # "user_ensdata": user_ensdata,
+        "user_ensdata": user_ensdata,
         "cast_warpcast": cast_warpcast,
         "reaction_warpcast": reaction_warpcast,
     }
@@ -564,35 +573,24 @@ def merger(source_type):
     return fn_map[source_type]
 
 
-async def refresh_all():
-    source_types = [
-        "user_warpcast",
-        "user_searchcaster",
-        "cast_warpcast",
-        "reaction_warpcast",
-    ]
+async def refresh_user() -> None:
+    # NOTE: to refresh from scratch, delete the queue and the parquet
+    refresh_everything = False
+    if refresh_everything:
+        os.remove("data/user_warpcast.ndjson")
+        os.remove("data/users.parquet")
 
-    if not os.path.isdir("queue"):
-        os.mkdir("queue")
-
-    for source_type in source_types:
-        filename = f"queue/{source_type}.csv"
-        if not os.path.isfile(filename):
-            open(filename, "w").close()
-
-        await queue_consumer(source_type)()
-        if source_type != "user_warpcast":
-            # NOTE: because user merge depends on user_searchcaster
-            merger(source_type)()
+    await queue_consumer("user_warpcast")(1000)
+    await queue_consumer("user_searchcaster")(125)
+    await queue_consumer("user_ensdata")(100)
+    df: pd.DataFrame = merger("user")()
+    df.to_parquet("data/users.parquet", index=False)
 
 
-# asyncio.run(refresh_all())
-
+# TODO: refresh casts and reactions
 
 # ======================================================================================
 # evals
 # ======================================================================================
 
-
-# asyncio.run(queue_consumer("reaction_warpcast")())
-# merger("cast_warpcast")()
+# asyncio.run(refresh_user())

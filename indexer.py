@@ -61,10 +61,9 @@ class CastWarpcast(pydantic.BaseModel):
     timestamp: int
     author_fid: int
     parent_hash: Optional[str]
-    # TODO:
-    # images: List[str]
-    # mentions: List[int]
-    # FIP 2
+    images: List[str]
+    mentions: List[int]
+    channel: Optional[str]
 
 
 class ReactionWarpcast(pydantic.BaseModel):
@@ -146,7 +145,6 @@ def extractor(source_type):
                 data_dict = data_dict[key]
             except KeyError:
                 return default
-        # return None if data_dict == "" else data_dict
         return data_dict
 
     def user_warpcast(user: dict) -> Optional[UserWarpcast]:
@@ -223,7 +221,10 @@ def extractor(source_type):
             return None
 
     def cast_warpcast(cast: dict) -> CastWarpcast:
-        # images = get_in(cast, ["embeds", "images"], [])
+        images = get_in(cast, ["embeds", "images"], [])
+        tags: List[dict] = get_in(cast, ["tags"], [])
+        mentions = get_in(cast, ["mentions"], [])
+
         return CastWarpcast(
             hash=get_in(cast, ["hash"]),
             thread_hash=get_in(cast, ["threadHash"]),
@@ -231,6 +232,11 @@ def extractor(source_type):
             timestamp=get_in(cast, ["timestamp"]),
             author_fid=get_in(cast, ["author", "fid"]),
             parent_hash=get_in(cast, ["parentHash"]),
+            images=[image["sourceUrl"] for image in images],
+            channel=next(  # out of the tag list, get the first channel tag
+                (tag["name"] for tag in tags if tag["type"] == "channel"), None
+            ),
+            mentions=[mention["fid"] for mention in mentions],
         )
 
     def reaction_warpcast(reaction: dict) -> ReactionWarpcast:
@@ -592,4 +598,4 @@ async def refresh_user() -> None:
 # evals
 # ======================================================================================
 
-# asyncio.run(refresh_user())
+# asyncio.run(refresh_user()

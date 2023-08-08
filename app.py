@@ -48,8 +48,6 @@ def _active_ens_usernames() -> dict:
     }
 
 
-# TODO: result of this pipe pretty faulty, needs extensive testing
-# ex: where's vitalik?
 def _active_users(n=20):
     def to_dict(xs):
         return [

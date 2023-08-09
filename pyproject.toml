@@ -31,4 +31,5 @@ exclude = [
 line-length = 88
 
 [tool.mypy]
-strict = True
+ignore_missing_imports = true
+strict = true

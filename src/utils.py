@@ -1,8 +1,7 @@
 import time
 from datetime import datetime
-from typing import Any, List, Optional
+from typing import List, Optional
 
-import pandas as pd
 import pytz
 
 
@@ -84,7 +83,7 @@ def ymd_to_unixms(year: int, month: int, day: int = 1) -> int:
     return int(timestamp * 1000)
 
 
-def dedupe():
+def dedupe() -> None:
     def dedupe_single(filename: str, pk: str) -> None:
         import duckdb
 
@@ -113,35 +112,28 @@ def csv_to_parquet(csv_filepath: str) -> None:
     dataframe.to_parquet(parquet_filepath, engine="pyarrow")
 
 
-# TODO: duplicate fn in indexer.py, can't mutually import, fix
-def _execute_query(query: str) -> List[Any]:
-    import duckdb
-
-    con = duckdb.connect(database=":memory:")
-    return list(filter(None, [x[0] for x in con.execute(query).fetchall()]))
-
-
-def _execute_query_df(query: str) -> pd.DataFrame:
-    import duckdb
-
-    con = duckdb.connect(database=":memory:")
-    return con.execute(query).fetchdf()
-
-
 def get_fid_by_username(username: str) -> Optional[int]:
+    import duckdb
+
+    con = duckdb.connect(database=":memory:")
     query = "SELECT fid FROM read_parquet('data/users.parquet') "
     query += f"WHERE username = '{username}'"
+
     try:
-        return _execute_query(query)[0]
+        return list(filter(None, [x[0] for x in con.execute(query).fetchall()]))[0]
     except IndexError:
         return None
 
 
-def get_username_by_fid(fid: int) -> Optional[str]:
+def get_username_by_fid(fid: int) -> Optional[int]:
+    import duckdb
+
+    con = duckdb.connect(database=":memory:")
     query = "SELECT username FROM read_parquet('data/users.parquet') "
     query += f"WHERE fid = '{fid}'"
+
     try:
-        return _execute_query(query)[0]
+        return list(filter(None, [x[0] for x in con.execute(query).fetchall()]))[0]
     except IndexError:
         return None
 

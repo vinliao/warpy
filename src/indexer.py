@@ -423,7 +423,9 @@ class QueueConsumer:
             print(f"source_type: {len(queue)} left; fetching: {n}")
             urls = [url_maker_fn(fid) for fid in current_batch]
             users = await fetcher_fn(urls)
-            json_append(f"queue/{url_maker_fn.__name__}", list(filter(None, users)))
+            json_append(
+                f"queue/{url_maker_fn.__name__}.ndjson", list(filter(None, users))
+            )
             time.sleep(0.5)
 
     @staticmethod
@@ -541,6 +543,7 @@ async def refresh_user() -> None:
         (UrlMaker.user_ensdata, QueueProducer.user_ensdata, Fetcher.user_ensdata, 25),
     ]
 
+    # TODO: this only runs once, searchcaster and ensdata are not refreshed
     for function_group in function_groups:
         await QueueConsumer.user_queue_consumer(*function_group)
 
@@ -548,4 +551,5 @@ async def refresh_user() -> None:
     df.to_parquet(uf, index=False)
 
 
+asyncio.run(refresh_user())
 # # TODO: refresh casts and reactions

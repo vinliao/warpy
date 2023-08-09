@@ -8,8 +8,8 @@ from typing import List
 import pandas as pd
 import pytest
 
-import indexer
-import utils
+import src.indexer as indexer
+import src.utils as utils
 
 
 @pytest.fixture(autouse=True)
@@ -94,6 +94,7 @@ async def test_user_integration():
     assert sorted(new_df["fid"].tolist()) == sorted(fids + new_fids)
     users = list(map(lambda x: indexer.User(**x), new_df.to_dict("records")))
     assert all(isinstance(user, indexer.User) for user in users)
+
 
 @pytest.mark.asyncio
 async def test_cast_reaction_integration():

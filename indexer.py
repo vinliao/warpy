@@ -349,7 +349,7 @@ class QueueProducer:
 
         network_fids = range(1, _fetch_highest_fid() + 1)
         local_fids = _get_local_fids(queued_file, data_file)
-        return list(set(network_fids) - set(local_fids))
+        return list(set(network_fids) - set(local_fids))  # set difference
 
     @staticmethod
     def user_searchcaster(
@@ -357,9 +357,9 @@ class QueueProducer:
         searchcaster_queue_file="queue/user_searchcaster.ndjson",
     ) -> List[int]:
         # NOTE: not including parquet users because it's gonna be be merged with queue
-        warpcast_fids = get_fids(warpcast_queue_file)
-        searchcaster_fids = get_fids(searchcaster_queue_file)
-        return list(set(warpcast_fids) - set(searchcaster_fids))  # set difference
+        w_fids = get_fids(warpcast_queue_file)
+        s_fids = get_fids(searchcaster_queue_file)
+        return list(set(w_fids) - set(s_fids))  # set difference
 
     # TODO: this code still untested
     @staticmethod
@@ -384,11 +384,11 @@ class QueueProducer:
         # NOTE: once queue is consuming, can't stop and resume
         query = f"SELECT MAX(timestamp) FROM read_parquet('{filepath}')"
         try:
-            r: List[int] = execute_query(query)  # a list of one element
-            return r[0] if r else 0
+            time: List[int] = execute_query(query)  # a list of one element
+            return time[0] if time else 0
         except Exception as e:
             print(f"Error: {e}")
-            return 0
+            return 0  # no item, means get all casts in network
 
     # TODO: simplify-able
     @staticmethod
@@ -400,9 +400,9 @@ class QueueProducer:
         query = f"SELECT hash FROM read_parquet('{data_file}') "
         query += f"WHERE timestamp >= {t_from} AND timestamp < {t_until}"
         try:
-            cast_hashes = execute_query(query)
-            cast_hashes = list(set(cast_hashes))
-            return [(hash, None) for hash in cast_hashes]
+            hashes = execute_query(query)
+            hashes = list(set(hashes))
+            return [(hash, None) for hash in hashes]
         except Exception as e:
             print(f"Error: {e}")
             return []
@@ -423,22 +423,22 @@ class QueueConsumer:
             print(f"source_type: {len(queue)} left; fetching: {n}")
             urls = [url_maker_fn(fid) for fid in current_batch]
             users = await fetcher_fn(urls)
-            json_append("queue/cast_warpcast.ndjson", list(filter(None, users)))
+            json_append(f"queue/{url_maker_fn.__name__}", list(filter(None, users)))
             time.sleep(0.5)
 
     @staticmethod
     async def cast_warpcast(limit=1000) -> None:
         max_timestamp = QueueProducer.cast_warpcast()
-        incoming_cast_timestamp = max_timestamp + 1
+        new_timestamp = max_timestamp + 1
         cursor = None
-        while incoming_cast_timestamp > max_timestamp:
+        while new_timestamp > max_timestamp:
             url = UrlMaker.cast_warpcast(limit, cursor)
             result = await Fetcher.cast_warpcast(url)
             casts: List[CastWarpcast] = result["casts"]
-            incoming_cast_timestamp = casts[-1].timestamp
+            new_timestamp = casts[-1].timestamp
             cursor = result["next_cursor"]
             json_append("queue/cast_warpcast.ndjson", casts)  # type: ignore
-            timestamp_diff = incoming_cast_timestamp - max_timestamp
+            timestamp_diff = new_timestamp - max_timestamp
             print(f"cast_warpcast: {utils.ms_to_days(timestamp_diff):.2f} days left")
             time.sleep(0.5)
 
@@ -495,7 +495,7 @@ class Merger:
         return df
 
     @staticmethod
-    def cast_reaction(queued_file, data_file) -> pd.DataFrame:
+    def cast(queued_file, data_file) -> pd.DataFrame:
         queued_df = pd.read_json(
             queued_file, lines=True, dtype_backend="pyarrow", convert_dates=False
         )
@@ -508,6 +508,10 @@ class Merger:
         df = pd.concat([df, queued_df])
         df = df.drop_duplicates(subset=["hash"])
         return df
+
+    @staticmethod
+    def reaction(queued_file, data_file) -> pd.DataFrame:
+        return Merger.cast(queued_file, data_file)
 
 
 async def refresh_user() -> None:

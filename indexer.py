@@ -276,46 +276,39 @@ class Fetcher:
     api_key = os.getenv("PICTURE_WARPCAST_API_KEY")
 
     @staticmethod
-    async def make_request(
-        session: aiohttp.ClientSession, url: str, key: Optional[str] = None
-    ) -> dict:
+    async def make_request(url: str, key: Optional[str] = None) -> dict:
         headers = {"Authorization": f"Bearer {key}"} if key else None
-        async with session.get(url, headers=headers) as response:
-            return await response.json()
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=headers) as response:
+                return await response.json()
 
     @staticmethod
-    async def user_warpcast(
-        session: aiohttp.ClientSession, urls: str
-    ) -> List[UserWarpcast]:
+    async def user_warpcast(urls: str) -> List[UserWarpcast]:
         async def _fetch(url: str):
-            data = await Fetcher.make_request(session, url, Fetcher.api_key)
+            data = await Fetcher.make_request(url, Fetcher.api_key)
             return Extractor.user_warpcast(data["result"])
 
         return await asyncio.gather(*[_fetch(url) for url in urls])
 
     @staticmethod
-    async def user_searchcaster(
-        session: aiohttp.ClientSession, urls: str
-    ) -> List[UserSearchcaster]:
+    async def user_searchcaster(urls: str) -> List[UserSearchcaster]:
         async def _fetch(url: str):
-            data = await Fetcher.make_request(session, url)
+            data = await Fetcher.make_request(url)
             return Extractor.user_searchcaster(data[0])
 
         return await asyncio.gather(*[_fetch(url) for url in urls])
 
     @staticmethod
-    async def user_ensdata(
-        session: aiohttp.ClientSession, urls: str
-    ) -> List[UserEnsdata]:
+    async def user_ensdata(urls: str) -> List[UserEnsdata]:
         async def _fetch(url: str):
-            data = await Fetcher.make_request(session, url)
+            data = await Fetcher.make_request(url)
             return Extractor.user_ensdata(data)
 
         return await asyncio.gather(*[_fetch(url) for url in urls])
 
     @staticmethod
-    async def cast_warpcast(session: aiohttp.ClientSession, url: str) -> dict:
-        data = await Fetcher.make_request(session, url, Fetcher.api_key)
+    async def cast_warpcast(url: str) -> dict:
+        data = await Fetcher.make_request(url, Fetcher.api_key)
         next_data = data.get("next")
         return {
             "casts": list(map(Extractor.cast_warpcast, data["result"]["casts"])),
@@ -323,11 +316,9 @@ class Fetcher:
         }
 
     @staticmethod
-    async def reaction_warpcast(
-        session: aiohttp.ClientSession, urls: str
-    ) -> List[dict]:
+    async def reaction_warpcast(urls: List[str]) -> List[dict]:
         async def _fetch(url: str):
-            data = await Fetcher.make_request(session, url, Fetcher.api_key)
+            data = await Fetcher.make_request(url, Fetcher.api_key)
             next_data = data.get("next")
             reactions = data["result"]["reactions"]
             return {
@@ -424,53 +415,46 @@ class QueueConsumer:
         queue_producer_fn,
         fetcher_fn,
         n=100,
-    ):
+    ) -> None:
         queue = queue_producer_fn()
         while queue:
             current_batch = queue[:n]
             queue = queue[n:]
             print(f"source_type: {len(queue)} left; fetching: {n}")
             urls = [url_maker_fn(fid) for fid in current_batch]
-            async with aiohttp.ClientSession() as session:
-                users = await fetcher_fn(session, urls)
-
+            users = await fetcher_fn(urls)
             json_append("queue/cast_warpcast.ndjson", list(filter(None, users)))
             time.sleep(0.5)
 
     @staticmethod
-    async def cast_warpcast() -> None:
+    async def cast_warpcast(limit=1000) -> None:
         max_timestamp = QueueProducer.cast_warpcast()
         incoming_cast_timestamp = max_timestamp + 1
         cursor = None
         while incoming_cast_timestamp > max_timestamp:
-            url = UrlMaker.cast_warpcast(cursor)
-            async with aiohttp.ClientSession() as session:
-                result = await Fetcher.cast_warpcast(session, url)
-                casts = result["casts"]
-                incoming_cast_timestamp = casts[-1].timestamp
-                cursor = result["next_cursor"]
-
-            json_append("queue/cast_warpcast.ndjson", casts)
+            url = UrlMaker.cast_warpcast(limit, cursor)
+            result = await Fetcher.cast_warpcast(url)
+            casts: List[CastWarpcast] = result["casts"]
+            incoming_cast_timestamp = casts[-1].timestamp
+            cursor = result["next_cursor"]
+            json_append("queue/cast_warpcast.ndjson", casts)  # type: ignore
             timestamp_diff = incoming_cast_timestamp - max_timestamp
             print(f"cast_warpcast: {utils.ms_to_days(timestamp_diff):.2f} days left")
             time.sleep(0.5)
 
-    async def reaction_warpcast(n=1000):
+    @staticmethod
+    async def reaction_warpcast(n=1000) -> None:
         queue = QueueProducer.reaction_warpcast()
         while queue:
-            current_batch = queue[:n]
+            batch = queue[:n]
             queue = queue[n:]
             print(f"reaction_warpcast: {len(queue)} left; fetching: {n}")
-            urls = [
-                UrlMaker.reaction_warpcast(item[0], item[1]) for item in current_batch
-            ]
-            async with aiohttp.ClientSession() as session:
-                data = await Fetcher.reaction_warpcast(session, urls)
-
+            urls = [UrlMaker.reaction_warpcast(*item) for item in batch]
+            data = await Fetcher.reaction_warpcast(urls)
             for cast in data:
                 json_append("queue/reaction_warpcast.ndjson", cast["reactions"])
                 if cast["next_cursor"]:
-                    queue.append([cast["target_hash"], cast["next_cursor"]])
+                    queue.append((cast["target_hash"], cast["next_cursor"]))
             time.sleep(1)
 
 
@@ -537,30 +521,25 @@ async def refresh_user() -> None:
         os.remove(quwf)
         os.remove(uf)
 
-    # TODO: looks simplify-able
-    # TODO: untested code
-    w = [
-        UrlMaker.user_warpcast,
-        QueueProducer.user_warpcast,
-        Fetcher.user_warpcast,
-        1000
-    ]
-    s = [
-        UrlMaker.user_searchcaster,
-        QueueProducer.user_searchcaster,
-        Fetcher.user_searchcaster,
-        125
-    ]
-    e = [
-        UrlMaker.user_ensdata,
-        QueueProducer.user_ensdata,
-        Fetcher.user_ensdata,
-        25
+    function_groups = [
+        (
+            UrlMaker.user_warpcast,
+            QueueProducer.user_warpcast,
+            Fetcher.user_warpcast,
+            1000,
+        ),
+        (
+            UrlMaker.user_searchcaster,
+            QueueProducer.user_searchcaster,
+            Fetcher.user_searchcaster,
+            125,
+        ),
+        (UrlMaker.user_ensdata, QueueProducer.user_ensdata, Fetcher.user_ensdata, 25),
     ]
 
-    await QueueConsumer.user_queue_consumer(*w)
-    await QueueConsumer.user_queue_consumer(*s)
-    await QueueConsumer.user_queue_consumer(*e)
+    for function_group in function_groups:
+        await QueueConsumer.user_queue_consumer(*function_group)
+
     df = Merger.user(quwf, qusf, uf)
     df.to_parquet(uf, index=False)
 

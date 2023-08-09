@@ -418,65 +418,23 @@ class QueueProducer:
 
 
 class QueueConsumer:
-    # TODO: use this
-    # async def user_queue_consumer(
-    #     url_maker_fn,
-    #     queue_producer_fn,
-    #     fetcher_fn,
-    #     n=100,
-    # ):
-    #     queue = queue_producer_fn()
-    #     while queue:
-    #         current_batch = queue[:n]
-    #         queue = queue[n:]
-    #         print(f"source_type: {len(queue)} left; fetching: {n}")
-    #         urls = [url_maker_fn(fid) for fid in current_batch]
-    #         async with aiohttp.ClientSession() as session:
-    #             users = await fetcher_fn(session, urls)
-
-    #         json_append("queue/cast_warpcast.ndjson", list(filter(None, users)))
-    #         time.sleep(0.5)
-
     @staticmethod
-    async def user_warpcast(n=100):
-        queue = QueueProducer.user_warpcast()
+    async def user_queue_consumer(
+        url_maker_fn,
+        queue_producer_fn,
+        fetcher_fn,
+        n=100,
+    ):
+        queue = queue_producer_fn()
         while queue:
             current_batch = queue[:n]
             queue = queue[n:]
-            print(f"cast_warpcast: {len(queue)} left; fetching: {n}")
-            urls = [UrlMaker.user_warpcast(fid) for fid in current_batch]
+            print(f"source_type: {len(queue)} left; fetching: {n}")
+            urls = [url_maker_fn(fid) for fid in current_batch]
             async with aiohttp.ClientSession() as session:
-                users = await Fetcher.user_warpcast(session, urls)
+                users = await fetcher_fn(session, urls)
 
             json_append("queue/cast_warpcast.ndjson", list(filter(None, users)))
-            time.sleep(0.5)
-
-    @staticmethod
-    async def user_searchcaster(n=100):
-        queue = QueueProducer.user_searchcaster()
-        while queue:
-            current_batch = queue[:n]
-            queue = queue[n:]
-            print(f"source_type: {len(queue)} left; fetching: {n}")
-            urls = [UrlMaker.user_searchcaster(fid) for fid in current_batch]
-            async with aiohttp.ClientSession() as session:
-                users = await Fetcher.user_searchcaster(session, urls)
-
-            json_append("queue/user_searchcaster.ndjson", list(filter(None, users)))
-            time.sleep(0.5)
-
-    @staticmethod
-    async def user_ensdata(n=100):
-        queue = QueueProducer.user_ensdata()
-        while queue:
-            current_batch = queue[:n]
-            queue = queue[n:]
-            print(f"source_type: {len(queue)} left; fetching: {n}")
-            urls = [UrlMaker.user_ensdata(fid) for fid in current_batch]
-            async with aiohttp.ClientSession() as session:
-                users = await Fetcher.user_ensdata(session, urls)
-
-            json_append("queue/user_ensdata.ndjson", list(filter(None, users)))
             time.sleep(0.5)
 
     @staticmethod
@@ -579,9 +537,30 @@ async def refresh_user() -> None:
         os.remove(quwf)
         os.remove(uf)
 
-    await QueueConsumer.user_warpcast(1000)
-    await QueueConsumer.user_searchcaster(125)
-    await QueueConsumer.user_ensdata(100)
+    # TODO: looks simplify-able
+    # TODO: untested code
+    w = [
+        UrlMaker.user_warpcast,
+        QueueProducer.user_warpcast,
+        Fetcher.user_warpcast,
+        1000
+    ]
+    s = [
+        UrlMaker.user_searchcaster,
+        QueueProducer.user_searchcaster,
+        Fetcher.user_searchcaster,
+        125
+    ]
+    e = [
+        UrlMaker.user_ensdata,
+        QueueProducer.user_ensdata,
+        Fetcher.user_ensdata,
+        25
+    ]
+
+    await QueueConsumer.user_queue_consumer(*w)
+    await QueueConsumer.user_queue_consumer(*s)
+    await QueueConsumer.user_queue_consumer(*e)
     df = Merger.user(quwf, qusf, uf)
     df.to_parquet(uf, index=False)
 

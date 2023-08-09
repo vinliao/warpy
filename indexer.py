@@ -1,4 +1,5 @@
 import asyncio
+import functools
 import json
 import os
 import time
@@ -101,44 +102,67 @@ def make_warpcast_request(url: str) -> dict:
     return response.json()
 
 
+def get_property(property: str, file_path: str) -> List[Any]:
+    file_format = file_path.split(".")[-1]
+    if file_format == "ndjson" or file_format == "json":
+        query = f"SELECT {property} FROM read_json_auto('{file_path}')"
+    else:
+        query = f"SELECT {property} FROM read_parquet('{file_path}')"
+
+    try:
+        return execute_query(query)
+    except Exception as e:
+        print(e)
+        return []
+
+
+get_fids = functools.partial(get_property, "fid")
+get_addresses = functools.partial(get_property, "address")
+get_hashes = functools.partial(get_property, "hash")
+get_target_hashes = functools.partial(get_property, "target_hash")
+
+
+def json_append(file_path: str, data: list[pydantic.BaseModel]):
+    with open(file_path, "a") as f:
+        for item in data:
+            json.dump(item.model_dump(), f)  # type: ignore
+            f.write("\n")
+
+
 # ======================================================================================
 # indexer
 # ======================================================================================
 
 
-def url_maker(source_type: str):
+class UrlMaker:
     warpcast_url = "https://api.warpcast.com/v2"
     searchcaster_url = "https://searchcaster.xyz/api"
 
+    @staticmethod
     def user_warpcast(fid: int) -> str:
-        return f"{warpcast_url}/user?fid={fid}"
+        return f"{UrlMaker.warpcast_url}/user?fid={fid}"
 
+    @staticmethod
     def user_searchcaster(fid: int) -> str:
-        return f"{searchcaster_url}/profiles?fid={fid}"
+        return f"{UrlMaker.searchcaster_url}/profiles?fid={fid}"
 
+    @staticmethod
     def user_ensdata(address: str) -> str:
         return f"https://ensdata.net/{address}"
 
-    def cast_warpcast(cursor: Optional[str] = None, limit=1000) -> str:
-        url = f"{warpcast_url}/recent-casts?limit={limit}"
+    @staticmethod
+    def cast_warpcast(limit=1000, cursor: Optional[str] = None) -> str:
+        url = f"{UrlMaker.warpcast_url}/recent-casts?limit={limit}"
         return f"{url}&cursor={cursor}" if cursor else url
 
+    @staticmethod
     def reaction_warpcast(hash: str, cursor: Optional[str] = None) -> str:
-        url = f"{warpcast_url}/cast-reactions?castHash={hash}&limit=100"
+        url = f"{UrlMaker.warpcast_url}/cast-reactions?castHash={hash}&limit=100"
         return f"{url}&cursor={cursor}" if cursor else url
 
-    fn_map = {
-        "user_warpcast": user_warpcast,
-        "user_searchcaster": user_searchcaster,
-        "user_ensdata": user_ensdata,
-        "cast_warpcast": cast_warpcast,
-        "reaction_warpcast": reaction_warpcast,
-    }
 
-    return fn_map[source_type]
-
-
-def extractor(source_type):
+class Extractor:
+    @staticmethod
     def get_in(data_dict, map_list, default=None):
         for key in map_list:
             try:
@@ -147,50 +171,47 @@ def extractor(source_type):
                 return default
         return data_dict
 
+    @staticmethod
     def user_warpcast(user: dict) -> Optional[UserWarpcast]:
         try:
-            location_id = get_in(user, ["user", "profile", "location", "placeId"])
-            location_description = get_in(
-                user, ["user", "profile", "location", "description"]
-            )
+            location = Extractor.get_in(user, ["user", "profile", "location"], {})
+            location_id = location.get("placeId") or None
+            location_description = location.get("description") or None
 
-            location_id = None if location_id == "" else location_id
-            location_description = (
-                None if location_description == "" else location_description
-            )
+            collections = user.get("collectionsOwned", [])
+            collections = [collection.get("id") for collection in collections]
 
             return UserWarpcast(
-                fid=get_in(user, ["user", "fid"]),
-                username=get_in(user, ["user", "username"]),
-                display_name=get_in(user, ["user", "displayName"]),
-                pfp_url=get_in(user, ["user", "pfp", "url"]),
-                bio_text=get_in(user, ["user", "profile", "bio", "text"]),
-                following_count=get_in(user, ["user", "followingCount"], 0),
-                follower_count=get_in(user, ["user", "followerCount"], 0),
+                fid=Extractor.get_in(user, ["user", "fid"]),
+                username=Extractor.get_in(user, ["user", "username"]),
+                display_name=Extractor.get_in(user, ["user", "displayName"]),
+                pfp_url=Extractor.get_in(user, ["user", "pfp", "url"]),
+                bio_text=Extractor.get_in(user, ["user", "profile", "bio", "text"]),
+                following_count=Extractor.get_in(user, ["user", "followingCount"], 0),
+                follower_count=Extractor.get_in(user, ["user", "followerCount"], 0),
                 location_id=location_id,
                 location_description=location_description,
-                verified=get_in(user, ["user", "pfp", "verified"], False),
-                is_active=get_in(user, ["user", "activeOnFcNetwork"], False),
-                inviter_fid=get_in(user, ["inviter", "fid"]),
-                onchain_collections=[
-                    collection.get("id")
-                    for collection in user.get("collectionsOwned", [])
-                ],
+                verified=Extractor.get_in(user, ["user", "pfp", "verified"], False),
+                is_active=Extractor.get_in(user, ["user", "activeOnFcNetwork"], False),
+                inviter_fid=Extractor.get_in(user, ["inviter", "fid"]),
+                onchain_collections=collections,
             )
         except Exception as e:
             print(f"Failed to create UserWarpcast due to {str(e)}")
             return None
 
+    @staticmethod
     def user_searchcaster(user: dict) -> UserSearchcaster:
         return UserSearchcaster(
-            fid=get_in(user, ["body", "id"]),
-            generated_farcaster_address=get_in(user, ["body", "address"]),
-            address=get_in(user, ["connectedAddress"]),
-            registered_at=get_in(user, ["body", "registeredAt"]),
+            fid=Extractor.get_in(user, ["body", "id"]),
+            generated_farcaster_address=Extractor.get_in(user, ["body", "address"]),
+            address=Extractor.get_in(user, ["connectedAddress"]),
+            registered_at=Extractor.get_in(user, ["body", "registeredAt"]),
         )
 
+    @staticmethod
     def user_ensdata(user: dict) -> Optional[UserEnsdata]:
-        if get_in(user, ["error"]) is True:
+        if Extractor.get_in(user, ["error"]) is True:
             address = utils.extract_ethereum_address(user["message"])
             if address is None:
                 return None
@@ -207,31 +228,32 @@ def extractor(source_type):
 
         try:
             return UserEnsdata(
-                address=get_in(user, ["address"]),
-                discord=get_in(user, ["discord"]),
-                email=get_in(user, ["email"]),
-                ens=get_in(user, ["ens"]),
-                github=get_in(user, ["github"]),
-                telegram=get_in(user, ["telegram"]),
-                twitter=get_in(user, ["twitter"]),
-                url=get_in(user, ["url"]),
+                address=Extractor.get_in(user, ["address"]),
+                discord=Extractor.get_in(user, ["discord"]),
+                email=Extractor.get_in(user, ["email"]),
+                ens=Extractor.get_in(user, ["ens"]),
+                github=Extractor.get_in(user, ["github"]),
+                telegram=Extractor.get_in(user, ["telegram"]),
+                twitter=Extractor.get_in(user, ["twitter"]),
+                url=Extractor.get_in(user, ["url"]),
             )
         except Exception as e:
             print(f"Failed to create UserEnsdata due to {str(e)}")
             return None
 
+    @staticmethod
     def cast_warpcast(cast: dict) -> CastWarpcast:
-        images = get_in(cast, ["embeds", "images"], [])
-        tags: List[dict] = get_in(cast, ["tags"], [])
-        mentions = get_in(cast, ["mentions"], [])
+        images = Extractor.get_in(cast, ["embeds", "images"], [])
+        tags: List[dict] = Extractor.get_in(cast, ["tags"], [])
+        mentions = Extractor.get_in(cast, ["mentions"], [])
 
         return CastWarpcast(
-            hash=get_in(cast, ["hash"]),
-            thread_hash=get_in(cast, ["threadHash"]),
-            text=get_in(cast, ["text"]),
-            timestamp=get_in(cast, ["timestamp"]),
-            author_fid=get_in(cast, ["author", "fid"]),
-            parent_hash=get_in(cast, ["parentHash"]),
+            hash=Extractor.get_in(cast, ["hash"]),
+            thread_hash=Extractor.get_in(cast, ["threadHash"]),
+            text=Extractor.get_in(cast, ["text"]),
+            timestamp=Extractor.get_in(cast, ["timestamp"]),
+            author_fid=Extractor.get_in(cast, ["author", "fid"]),
+            parent_hash=Extractor.get_in(cast, ["parentHash"]),
             images=[image["sourceUrl"] for image in images],
             channel=next(  # out of the tag list, get the first channel tag
                 (tag["name"] for tag in tags if tag["type"] == "channel"), None
@@ -239,143 +261,92 @@ def extractor(source_type):
             mentions=[mention["fid"] for mention in mentions],
         )
 
+    @staticmethod
     def reaction_warpcast(reaction: dict) -> ReactionWarpcast:
         return ReactionWarpcast(
-            type=get_in(reaction, ["type"]),
-            hash=get_in(reaction, ["hash"]),
-            timestamp=get_in(reaction, ["timestamp"]),
-            target_hash=get_in(reaction, ["castHash"]),
-            reactor_fid=get_in(reaction, ["reactor", "fid"]),
+            type=Extractor.get_in(reaction, ["type"]),
+            hash=Extractor.get_in(reaction, ["hash"]),
+            timestamp=Extractor.get_in(reaction, ["timestamp"]),
+            target_hash=Extractor.get_in(reaction, ["castHash"]),
+            reactor_fid=Extractor.get_in(reaction, ["reactor", "fid"]),
         )
 
-    fn_map = {
-        "user_warpcast": user_warpcast,
-        "user_searchcaster": user_searchcaster,
-        "user_ensdata": user_ensdata,
-        "cast_warpcast": cast_warpcast,
-        "reaction_warpcast": reaction_warpcast,
-    }
 
-    return fn_map[source_type]
-
-
-def fetcher(source_type):
+class Fetcher:
     api_key = os.getenv("PICTURE_WARPCAST_API_KEY")
 
-    async def _make_request(
+    @staticmethod
+    async def make_request(
         session: aiohttp.ClientSession, url: str, key: Optional[str] = None
     ) -> dict:
         headers = {"Authorization": f"Bearer {key}"} if key else None
         async with session.get(url, headers=headers) as response:
             return await response.json()
 
+    @staticmethod
     async def user_warpcast(
         session: aiohttp.ClientSession, urls: str
     ) -> List[UserWarpcast]:
         async def _fetch(url: str):
-            data = await _make_request(session, url, api_key)
-            return extractor(source_type)(data["result"])
+            data = await Fetcher.make_request(session, url, Fetcher.api_key)
+            return Extractor.user_warpcast(data["result"])
 
         return await asyncio.gather(*[_fetch(url) for url in urls])
 
+    @staticmethod
     async def user_searchcaster(
         session: aiohttp.ClientSession, urls: str
     ) -> List[UserSearchcaster]:
         async def _fetch(url: str):
-            data = await _make_request(session, url)
-            return extractor(source_type)(data[0])
+            data = await Fetcher.make_request(session, url)
+            return Extractor.user_searchcaster(data[0])
 
         return await asyncio.gather(*[_fetch(url) for url in urls])
 
+    @staticmethod
     async def user_ensdata(
         session: aiohttp.ClientSession, urls: str
     ) -> List[UserEnsdata]:
         async def _fetch(url: str):
-            data = await _make_request(session, url)
-            return extractor(source_type)(data)
+            data = await Fetcher.make_request(session, url)
+            return Extractor.user_ensdata(data)
 
         return await asyncio.gather(*[_fetch(url) for url in urls])
 
+    @staticmethod
     async def cast_warpcast(session: aiohttp.ClientSession, url: str) -> dict:
-        data = await _make_request(session, url, api_key)
+        data = await Fetcher.make_request(session, url, Fetcher.api_key)
         next_data = data.get("next")
         return {
-            "casts": list(map(extractor(source_type), data["result"]["casts"])),
+            "casts": list(map(Extractor.cast_warpcast, data["result"]["casts"])),
             "next_cursor": next_data["cursor"] if next_data else None,
         }
 
+    @staticmethod
     async def reaction_warpcast(
         session: aiohttp.ClientSession, urls: str
     ) -> List[dict]:
         async def _fetch(url: str):
-            data = await _make_request(session, url, api_key)
+            data = await Fetcher.make_request(session, url, Fetcher.api_key)
             next_data = data.get("next")
             reactions = data["result"]["reactions"]
             return {
-                "reactions": list(map(extractor(source_type), reactions)),
+                "reactions": list(map(Extractor.reaction_warpcast, reactions)),
                 "next_cursor": next_data["cursor"] if next_data else None,
                 "target_hash": reactions[0]["castHash"] if len(reactions) > 0 else None,
             }
 
         return await asyncio.gather(*[_fetch(url) for url in urls])
 
-    fn_map = {
-        "user_warpcast": user_warpcast,
-        "user_searchcaster": user_searchcaster,
-        "user_ensdata": user_ensdata,
-        "cast_warpcast": cast_warpcast,
-        "reaction_warpcast": reaction_warpcast,
-    }
 
-    return fn_map[source_type]
-
-
-def queue_producer(source_type):
-    def _get_fids(file_path: str) -> List[int]:
-        file_format = file_path.split(".")[-1]
-        if file_format == "ndjson" or file_format == "json":
-            query = f"SELECT fid FROM read_json_auto('{file_path}')"
-        else:
-            query = f"SELECT fid FROM read_parquet('{file_path}')"
-
-        try:
-            return execute_query(query)
-        except Exception as e:
-            print(e)
-            return []
-
-    def _get_addresses(file_path: str) -> List[str]:
-        file_format = file_path.split(".")[-1]
-        if file_format == "ndjson" or file_format == "json":
-            query = f"SELECT address FROM read_json_auto('{file_path}')"
-        else:
-            query = f"SELECT address FROM read_parquet('{file_path}')"
-
-        try:
-            return execute_query(query)
-        except Exception as e:
-            print(e)
-            return []
-
-    def _get_hashes(file_path: str) -> List[str]:
-        file_format = file_path.split(".")[-1]
-        if file_format == "ndjson" or file_format == "json":
-            query = f"SELECT hash FROM read_json_auto('{file_path}')"
-        else:
-            query = f"SELECT hash FROM read_parquet('{file_path}')"
-
-        try:
-            return execute_query(query)
-        except Exception as e:
-            print(e)
-            return []
-
+class QueueProducer:
+    @staticmethod
     def user_warpcast(
         queued_file="queue/user_warpcast.ndjson", data_file="data/users.parquet"
     ):
         def _get_local_fids(queued_file: str, data_file: str) -> List[int]:
-            fids1 = _get_fids(queued_file)
-            fids2 = _get_fids(data_file)
+            fids1 = get_fids(queued_file)
+            fids2 = get_fids(data_file)
             return list(set(fids1).union(set(fids2)))
 
         def _fetch_highest_fid() -> int:
@@ -389,21 +360,23 @@ def queue_producer(source_type):
         local_fids = _get_local_fids(queued_file, data_file)
         return list(set(network_fids) - set(local_fids))
 
+    @staticmethod
     def user_searchcaster(
         warpcast_queue_file="queue/user_warpcast.ndjson",
         searchcaster_queue_file="queue/user_searchcaster.ndjson",
     ) -> List[int]:
         # NOTE: not including parquet users because it's gonna be be merged with queue
-        warpcast_fids = _get_fids(warpcast_queue_file)
-        searchcaster_fids = _get_fids(searchcaster_queue_file)
+        warpcast_fids = get_fids(warpcast_queue_file)
+        searchcaster_fids = get_fids(searchcaster_queue_file)
         return list(set(warpcast_fids) - set(searchcaster_fids))  # set difference
 
     # TODO: this code still untested
+    @staticmethod
     def user_ensdata() -> List[str]:
         searchcaster_data_path = "queue/user_searchcaster.ndjson"
         ensdata_data_path = "queue/user_ensdata.ndjson"
-        searchcaster_addresses = _get_addresses(searchcaster_data_path)
-        ensdata_addresses = _get_addresses(ensdata_data_path)
+        searchcaster_addresses = get_addresses(searchcaster_data_path)
+        ensdata_addresses = get_addresses(ensdata_data_path)
         # NOTE: ensdata doesn't return these addresses
         forbidden_addresses = [
             "0x947caf5ada865ace0c8de0ffd55de0c02e5f6b54",
@@ -415,6 +388,7 @@ def queue_producer(source_type):
             set(searchcaster_addresses) - set(ensdata_addresses + forbidden_addresses)
         )
 
+    @staticmethod
     def cast_warpcast(filepath="data/casts.parquet") -> int:
         # NOTE: once queue is consuming, can't stop and resume
         query = f"SELECT MAX(timestamp) FROM read_parquet('{filepath}')"
@@ -426,6 +400,7 @@ def queue_producer(source_type):
             return 0
 
     # TODO: simplify-able
+    @staticmethod
     def reaction_warpcast(
         t_from=utils.days_ago_to_unixms(32),  # more than 1 month
         t_until=utils.ms_now(),
@@ -441,85 +416,111 @@ def queue_producer(source_type):
             print(f"Error: {e}")
             return []
 
-    fn_map = {
-        "user_warpcast": user_warpcast,
-        "user_searchcaster": user_searchcaster,
-        "user_ensdata": user_ensdata,
-        "cast_warpcast": cast_warpcast,
-        "reaction_warpcast": reaction_warpcast,
-    }
 
-    return fn_map[source_type]
+class QueueConsumer:
+    # TODO: use this
+    # async def user_queue_consumer(
+    #     url_maker_fn,
+    #     queue_producer_fn,
+    #     fetcher_fn,
+    #     n=100,
+    # ):
+    #     queue = queue_producer_fn()
+    #     while queue:
+    #         current_batch = queue[:n]
+    #         queue = queue[n:]
+    #         print(f"source_type: {len(queue)} left; fetching: {n}")
+    #         urls = [url_maker_fn(fid) for fid in current_batch]
+    #         async with aiohttp.ClientSession() as session:
+    #             users = await fetcher_fn(session, urls)
 
+    #         json_append("queue/cast_warpcast.ndjson", list(filter(None, users)))
+    #         time.sleep(0.5)
 
-def queue_consumer(source_type):
-    def json_append(file_path: str, data: list[pydantic.BaseModel]):
-        with open(file_path, "a") as f:
-            for item in data:
-                json.dump(item.model_dump(), f)  # type: ignore
-                f.write("\n")
-
-    async def user_queue_consumer(n=100):
-        queue = queue_producer(source_type)()
+    @staticmethod
+    async def user_warpcast(n=100):
+        queue = QueueProducer.user_warpcast()
         while queue:
             current_batch = queue[:n]
             queue = queue[n:]
-            print(f"{source_type}: {len(queue)} left; fetching: {n}")
-            urls = [url_maker(source_type)(fid) for fid in current_batch]
+            print(f"cast_warpcast: {len(queue)} left; fetching: {n}")
+            urls = [UrlMaker.user_warpcast(fid) for fid in current_batch]
             async with aiohttp.ClientSession() as session:
-                users = await fetcher(source_type)(session, urls)
+                users = await Fetcher.user_warpcast(session, urls)
 
-            json_append(f"queue/{source_type}.ndjson", list(filter(None, users)))
+            json_append("queue/cast_warpcast.ndjson", list(filter(None, users)))
             time.sleep(0.5)
 
+    @staticmethod
+    async def user_searchcaster(n=100):
+        queue = QueueProducer.user_searchcaster()
+        while queue:
+            current_batch = queue[:n]
+            queue = queue[n:]
+            print(f"source_type: {len(queue)} left; fetching: {n}")
+            urls = [UrlMaker.user_searchcaster(fid) for fid in current_batch]
+            async with aiohttp.ClientSession() as session:
+                users = await Fetcher.user_searchcaster(session, urls)
+
+            json_append("queue/user_searchcaster.ndjson", list(filter(None, users)))
+            time.sleep(0.5)
+
+    @staticmethod
+    async def user_ensdata(n=100):
+        queue = QueueProducer.user_ensdata()
+        while queue:
+            current_batch = queue[:n]
+            queue = queue[n:]
+            print(f"source_type: {len(queue)} left; fetching: {n}")
+            urls = [UrlMaker.user_ensdata(fid) for fid in current_batch]
+            async with aiohttp.ClientSession() as session:
+                users = await Fetcher.user_ensdata(session, urls)
+
+            json_append("queue/user_ensdata.ndjson", list(filter(None, users)))
+            time.sleep(0.5)
+
+    @staticmethod
     async def cast_warpcast() -> None:
-        max_timestamp = queue_producer(source_type)()
+        max_timestamp = QueueProducer.cast_warpcast()
         incoming_cast_timestamp = max_timestamp + 1
         cursor = None
         while incoming_cast_timestamp > max_timestamp:
-            url = url_maker(source_type)(cursor)
+            url = UrlMaker.cast_warpcast(cursor)
             async with aiohttp.ClientSession() as session:
-                result = await fetcher(source_type)(session, url)
+                result = await Fetcher.cast_warpcast(session, url)
                 casts = result["casts"]
                 incoming_cast_timestamp = casts[-1].timestamp
                 cursor = result["next_cursor"]
 
-            json_append(f"queue/{source_type}.ndjson", casts)
+            json_append("queue/cast_warpcast.ndjson", casts)
             timestamp_diff = incoming_cast_timestamp - max_timestamp
-            print(f"{source_type}: {utils.ms_to_days(timestamp_diff):.2f} days left")
+            print(f"cast_warpcast: {utils.ms_to_days(timestamp_diff):.2f} days left")
             time.sleep(0.5)
 
     async def reaction_warpcast(n=1000):
-        queue = queue_producer(source_type)()
+        queue = QueueProducer.reaction_warpcast()
         while queue:
             current_batch = queue[:n]
             queue = queue[n:]
-            print(f"{source_type}: {len(queue)} left; fetching: {n}")
-            urls = [url_maker(source_type)(item[0], item[1]) for item in current_batch]
+            print(f"reaction_warpcast: {len(queue)} left; fetching: {n}")
+            urls = [
+                UrlMaker.reaction_warpcast(item[0], item[1]) for item in current_batch
+            ]
             async with aiohttp.ClientSession() as session:
-                data = await fetcher(source_type)(session, urls)
+                data = await Fetcher.reaction_warpcast(session, urls)
 
             for cast in data:
-                json_append(f"queue/{source_type}.ndjson", cast["reactions"])
+                json_append("queue/reaction_warpcast.ndjson", cast["reactions"])
                 if cast["next_cursor"]:
                     queue.append([cast["target_hash"], cast["next_cursor"]])
             time.sleep(1)
 
-    fn_map = {
-        "user_warpcast": user_queue_consumer,
-        "user_searchcaster": user_queue_consumer,
-        "user_ensdata": user_queue_consumer,
-        "cast_warpcast": cast_warpcast,
-        "reaction_warpcast": reaction_warpcast,
-    }
 
-    return fn_map[source_type]
-
-
-def merger(source_type):
+class Merger:
     # NOTE: ideally DataFrame operations should only happen here,
     # queries should use duckdb+values and set function on PKs
 
+    @staticmethod
     def user(
         warpcast_file="queue/user_warpcast.ndjson",
         searchcaster_file="queue/user_searchcaster.ndjson",
@@ -551,6 +552,7 @@ def merger(source_type):
         df = df.drop_duplicates(subset=["fid"])
         return df
 
+    @staticmethod
     def cast_reaction(queued_file, data_file) -> pd.DataFrame:
         queued_df = pd.read_json(
             queued_file, lines=True, dtype_backend="pyarrow", convert_dates=False
@@ -565,37 +567,23 @@ def merger(source_type):
         df = df.drop_duplicates(subset=["hash"])
         return df
 
-    fn_map = {
-        "user": user,
-        "cast": cast_reaction,
-        "reaction": cast_reaction,
-        "user_warpcast": user,
-        "user_searchcaster": user,
-        "cast_warpcast": cast_reaction,
-        "reaction_warpcast": cast_reaction,
-    }
-
-    return fn_map[source_type]
-
 
 async def refresh_user() -> None:
+    quwf = "queue/user_warpcast.ndjson"
+    qusf = "queue/user_searchcaster.ndjson"
+    uf = "data/users.parquet"
+
     # NOTE: to refresh from scratch, delete the queue and the parquet
     refresh_everything = False
     if refresh_everything:
-        os.remove("data/user_warpcast.ndjson")
-        os.remove("data/users.parquet")
+        os.remove(quwf)
+        os.remove(uf)
 
-    await queue_consumer("user_warpcast")(1000)
-    await queue_consumer("user_searchcaster")(125)
-    await queue_consumer("user_ensdata")(100)
-    df: pd.DataFrame = merger("user")()
-    df.to_parquet("data/users.parquet", index=False)
+    await QueueConsumer.user_warpcast(1000)
+    await QueueConsumer.user_searchcaster(125)
+    await QueueConsumer.user_ensdata(100)
+    df = Merger.user(quwf, qusf, uf)
+    df.to_parquet(uf, index=False)
 
 
-# TODO: refresh casts and reactions
-
-# ======================================================================================
-# evals
-# ======================================================================================
-
-# asyncio.run(refresh_user()
+# # TODO: refresh casts and reactions

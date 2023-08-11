@@ -12,7 +12,8 @@ import pydantic
 import requests
 from dotenv import load_dotenv
 
-import src.utils as utils
+# import src.utils as utils
+import utils
 
 load_dotenv()
 
@@ -64,7 +65,8 @@ class CastWarpcast(pydantic.BaseModel):
     parent_hash: Optional[str]
     images: List[str]
     mentions: List[int]
-    channel: Optional[str]
+    channel_id: Optional[str]
+    channel_description: Optional[str]
 
 
 class ReactionWarpcast(pydantic.BaseModel):
@@ -288,6 +290,7 @@ class Extractor:
         images = Extractor.get_in(cast, ["embeds", "images"], [])
         tags: List[Any] = Extractor.get_in(cast, ["tags"], [])
         mentions = Extractor.get_in(cast, ["mentions"], [])
+        channel_tag = next((tag for tag in tags if tag["type"] == "channel"), None)
 
         return CastWarpcast(
             hash=Extractor.get_in(cast, ["hash"]),
@@ -297,9 +300,8 @@ class Extractor:
             author_fid=Extractor.get_in(cast, ["author", "fid"]),
             parent_hash=Extractor.get_in(cast, ["parentHash"]),
             images=[image["sourceUrl"] for image in images],
-            channel=next(  # out of the tag list, get the first channel tag
-                (tag["name"] for tag in tags if tag["type"] == "channel"), None
-            ),
+            channel_id=channel_tag["id"] if channel_tag else None,
+            channel_description=channel_tag["name"] if channel_tag else None,
             mentions=[mention["fid"] for mention in mentions],
         )
 
@@ -501,14 +503,13 @@ class QueueConsumer:
         )
 
     @staticmethod
-    async def cast_warpcast(limit: int = 1000) -> None:
+    async def cast_warpcast(cursor: Optional[str] = None) -> None:
         max_timestamp = QueueProducer.cast_warpcast()
         new_timestamp = max_timestamp + 1
-        cursor = None
         while new_timestamp > max_timestamp:
-            url = UrlMaker.cast_warpcast(limit, cursor)
+            url = UrlMaker.cast_warpcast(1000, cursor)
             result = await Fetcher.cast_warpcast(url)
-            casts: List[CastWarpcast] = result["casts"]
+            casts = result["casts"]
             new_timestamp = casts[-1].timestamp
             cursor = result["next_cursor"]
             json_append("queue/cast_warpcast.ndjson", casts)
@@ -574,26 +575,3 @@ class Merger:
     @staticmethod
     def reaction(queued_file: str, data_file: str) -> pd.DataFrame:
         return Merger.cast(queued_file, data_file)
-
-
-async def refresh_user() -> None:
-    quwf = "queue/user_warpcast.ndjson"
-    qusf = "queue/user_searchcaster.ndjson"
-    uf = "data/users.parquet"
-
-    # NOTE: to refresh from scratch, delete the queue and the parquet
-    refresh_everything = False
-    if refresh_everything:
-        os.remove(quwf)
-        os.remove(uf)
-
-    await QueueConsumer.user_warpcast(1000)
-    await QueueConsumer.user_searchcaster(125)
-    await QueueConsumer.user_ensdata(50)
-
-    df = Merger.user(quwf, qusf, uf)
-    df.to_parquet(uf, index=False)
-
-
-# asyncio.run(refresh_user())
-# # TODO: refresh casts and reactions

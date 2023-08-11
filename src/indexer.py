@@ -3,17 +3,16 @@ import functools
 import json
 import os
 import time
+from datetime import datetime
 from typing import Any, List, Optional, Sequence, Tuple, TypedDict
 
 import aiohttp
 import duckdb
 import pandas as pd
 import pydantic
+import pytz
 import requests
 from dotenv import load_dotenv
-
-# import src.utils as utils
-import utils
 
 load_dotenv()
 
@@ -169,6 +168,94 @@ def get_username_by_fid(fid: int) -> Optional[str]:
     return result[0] if result else None
 
 
+class TimeUtils:
+    @staticmethod
+    def ms_now() -> int:
+        return int(round(time.time() * 1000))
+
+    @staticmethod
+    def minutes_to_ms(minutes: int) -> int:
+        return minutes * 60 * 1000
+
+    @staticmethod
+    def hours_to_ms(hours: int) -> int:
+        return hours * 60 * 60 * 1000
+
+    @staticmethod
+    def days_to_ms(days: int) -> int:
+        return days * 24 * 60 * 60 * 1000
+
+    @staticmethod
+    def weeks_to_ms(weeks: int) -> int:
+        return weeks * 7 * 24 * 60 * 60 * 1000
+
+    @staticmethod
+    def ms_to_minutes(ms: int) -> float:
+        return ms / (60 * 1000)
+
+    @staticmethod
+    def ms_to_hours(ms: int) -> float:
+        return ms / (60 * 60 * 1000)
+
+    @staticmethod
+    def ms_to_days(ms: int) -> float:
+        return ms / (24 * 60 * 60 * 1000)
+
+    @staticmethod
+    def ms_to_weeks(ms: int) -> float:
+        return ms / (7 * 24 * 60 * 60 * 1000)
+
+    @staticmethod
+    def minutes_ago_to_unixms(minutes: int) -> int:
+        return TimeUtils.ms_now() - TimeUtils.minutes_to_ms(minutes)
+
+    @staticmethod
+    def hours_ago_to_unixms(hours: int) -> int:
+        return TimeUtils.ms_now() - TimeUtils.hours_to_ms(hours)
+
+    @staticmethod
+    def days_ago_to_unixms(days: int) -> int:
+        return TimeUtils.ms_now() - TimeUtils.days_to_ms(days)
+
+    @staticmethod
+    def weeks_ago_to_unixms(weeks: int) -> int:
+        return TimeUtils.ms_now() - TimeUtils.weeks_to_ms(weeks)
+
+    @staticmethod
+    def unixms_to_minutes_ago(ms: int) -> float:
+        return TimeUtils.ms_to_minutes(TimeUtils.ms_now() - ms)
+
+    @staticmethod
+    def unixms_to_hours_ago(ms: int) -> float:
+        return TimeUtils.ms_to_hours(TimeUtils.ms_now() - ms)
+
+    @staticmethod
+    def unixms_to_days_ago(ms: int) -> float:
+        return TimeUtils.ms_to_days(TimeUtils.ms_now() - ms)
+
+    @staticmethod
+    def unixms_to_weeks_ago(ms: int) -> float:
+        return TimeUtils.ms_to_weeks(TimeUtils.ms_now() - ms)
+
+    @staticmethod
+    def ymd_to_unixms(year: int, month: int, day: int = 1) -> int:
+        dt = datetime(year, month, day, tzinfo=pytz.UTC)
+        timestamp = dt.timestamp()
+        return int(timestamp * 1000)
+
+
+def is_valid_ethereum_address(address: str) -> bool:
+    import re
+
+    return bool(re.match(r"^(0x)?[0-9a-f]{40}$", address.lower()))
+
+
+# def max_gap(xs: List[int]) -> Optional[int]:
+#     import numpy as np
+
+#     diffs = np.diff(np.sort(xs))
+#     return diffs.max() if len(xs) > 0 else None
+
 # ======================================================================================
 # indexer
 # ======================================================================================
@@ -256,7 +343,14 @@ class Extractor:
     @staticmethod
     def user_ensdata(user: Any) -> Optional[UserEnsdata]:
         if Extractor.get_in(user, ["error"]) is True:
-            address = utils.extract_ethereum_address(user["message"])
+
+            def extract_ethereum_address(s: str) -> Optional[str]:
+                import re
+
+                match = re.search(r"0x[a-fA-F0-9]{40}", s)
+                return match.group() if match else None
+
+            address = extract_ethereum_address(user["message"])
             if address is None:
                 return None
             return UserEnsdata(
@@ -442,8 +536,8 @@ class QueueProducer:
     # TODO: simplify-able
     @staticmethod
     def reaction_warpcast(
-        t_from: int = utils.days_ago_to_unixms(32),  # more than 1 month
-        t_until: int = utils.ms_now(),
+        t_from: int = TimeUtils.days_ago_to_unixms(32),  # more than 1 month
+        t_until: int = TimeUtils.ms_now(),
         data_file: str = "data/casts.parquet",
     ) -> List[Tuple[str, Optional[str]]]:
         query = f"SELECT hash FROM read_parquet('{data_file}') "
@@ -508,14 +602,19 @@ class QueueConsumer:
         new_timestamp = max_timestamp + 1
         while new_timestamp > max_timestamp:
             url = UrlMaker.cast_warpcast(1000, cursor)
+            print(f"cast_warpcast: fetching {url}")
             result = await Fetcher.cast_warpcast(url)
             casts = result["casts"]
             new_timestamp = casts[-1].timestamp
             cursor = result["next_cursor"]
             json_append("queue/cast_warpcast.ndjson", casts)
             timestamp_diff = new_timestamp - max_timestamp
-            print(f"cast_warpcast: {utils.ms_to_days(timestamp_diff):.2f} days left")
+            print(
+                f"cast_warpcast: {TimeUtils.ms_to_days(timestamp_diff):.2f} days left"
+            )
             time.sleep(0.5)
+            if cursor is None:
+                break
 
     @staticmethod
     async def reaction_warpcast(n: int = 1000) -> None:

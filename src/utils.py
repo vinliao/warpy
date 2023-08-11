@@ -112,32 +112,6 @@ def csv_to_parquet(csv_filepath: str) -> None:
     dataframe.to_parquet(parquet_filepath, engine="pyarrow")
 
 
-def get_fid_by_username(username: str) -> Optional[int]:
-    import duckdb
-
-    con = duckdb.connect(database=":memory:")
-    query = "SELECT fid FROM read_parquet('data/users.parquet') "
-    query += f"WHERE username = '{username}'"
-
-    try:
-        return list(filter(None, [x[0] for x in con.execute(query).fetchall()]))[0]
-    except IndexError:
-        return None
-
-
-def get_username_by_fid(fid: int) -> Optional[int]:
-    import duckdb
-
-    con = duckdb.connect(database=":memory:")
-    query = "SELECT username FROM read_parquet('data/users.parquet') "
-    query += f"WHERE fid = '{fid}'"
-
-    try:
-        return list(filter(None, [x[0] for x in con.execute(query).fetchall()]))[0]
-    except IndexError:
-        return None
-
-
 def extract_ethereum_address(s: str) -> Optional[str]:
     import re
 

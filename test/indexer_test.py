@@ -3,17 +3,16 @@ import json
 import os
 import random
 import string
-from typing import List
+from typing import Any, Dict, Generator, Hashable, List
 
 import pandas as pd
 import pytest
 
-import src.indexer as indexer
-import src.utils as utils
+from src import indexer, utils
 
 
 @pytest.fixture(autouse=True)
-def setup_and_teardown():
+def setup_and_teardown() -> Generator[None, None, None]:
     # setup
     files = glob.glob("testdata/*")
     for file in files:
@@ -29,8 +28,12 @@ def setup_and_teardown():
             os.remove(file)
 
 
+def stringify_keys(d: Dict[Hashable, Any]) -> Dict[str, Any]:
+    return {str(key): value for key, value in d.items()}
+
+
 @pytest.mark.asyncio
-async def test_user_integration():
+async def test_user_integration() -> None:
     """
     What's tested:
     - both user fetcher fetches and extracts properly (returns pydantic model)
@@ -40,10 +43,10 @@ async def test_user_integration():
     def r_ints(n: int) -> List[int]:
         return [random.randint(1, 10000) for i in range(n)]
 
-    def make_fids(df1, df2) -> List[int]:
+    def make_fids(df1: pd.DataFrame, df2: pd.DataFrame) -> List[int]:
         return list(set(df1["fid"].tolist() + df2["fid"].tolist()))
 
-    async def fetch_write(url_maker_fn, fetcher_fn, fids: List[int]) -> None:
+    async def fetch_write(url_maker_fn, fetcher_fn, fids: List[int]) -> None:  # type: ignore
         urls = [url_maker_fn(fid) for fid in fids]
         users = await fetcher_fn(urls)
         indexer.json_append(f"testdata/{url_maker_fn.__name__}.ndjson", users)
@@ -61,43 +64,39 @@ async def test_user_integration():
     searchcaster_file = "testdata/user_searchcaster.ndjson"
     user_file = "testdata/users.parquet"
 
-    # test merge warpcast with searchcaster
-    ints1 = r_ints(10) + [3]
-    await fetch_fids(ints1)
-    w_df = pd.read_json(warpcast_file, lines=True, dtype_backend="pyarrow")
-    s_df = pd.read_json(searchcaster_file, lines=True, dtype_backend="pyarrow")
-    fids = make_fids(w_df, s_df)
-    df = indexer.Merger.user(warpcast_file, searchcaster_file, user_file)
-    assert isinstance(w_df, pd.DataFrame)
-    assert isinstance(s_df, pd.DataFrame)
-    assert isinstance(df, pd.DataFrame)
-    assert len(df) == len(w_df) == len(s_df)
-    assert set(df["fid"]).issubset(set(fids))
-    assert len(df.columns) == len(w_df.columns) + len(s_df.columns) - 1
+    # Test merge warpcast with searchcaster (first batch)
+    await fetch_fids(r_ints(10) + [3])  # add dwr for "complete profile"
+    w_df_1 = indexer.read_ndjson(warpcast_file)
+    s_df_1 = indexer.read_ndjson(searchcaster_file)
+    fids_1 = make_fids(w_df_1, s_df_1)
+    df_1 = indexer.Merger.user(warpcast_file, searchcaster_file, user_file)
+    assert isinstance(w_df_1, pd.DataFrame)
+    assert isinstance(s_df_1, pd.DataFrame)
+    assert isinstance(df_1, pd.DataFrame)
+    assert len(df_1) == len(w_df_1) == len(s_df_1)
+    assert set(df_1["fid"]).issubset(set(fids_1))
+    assert len(df_1.columns) == len(w_df_1.columns) + len(s_df_1.columns) - 1
 
-    # test merge local parquet with incoming data
+    # Test merge local parquet with incoming data (second batch)
     os.remove(warpcast_file)
     os.remove(searchcaster_file)
-    df.to_parquet(user_file)
-    ints2 = r_ints(5)
-    await fetch_fids(ints2)
-    new_w_df = pd.read_json(warpcast_file, lines=True, dtype_backend="pyarrow")
-    new_s_df = pd.read_json(
-        searchcaster_file, lines=True, dtype_backend="pyarrow", convert_dates=False
-    )
-    new_fids = make_fids(new_w_df, new_s_df)
-    assert isinstance(new_w_df, pd.DataFrame)
-    assert isinstance(new_s_df, pd.DataFrame)
-    assert len(new_w_df) == len(new_s_df)
+    df_1.to_parquet(user_file)
+    await fetch_fids(r_ints(5))
+    w_df_2 = indexer.read_ndjson(warpcast_file)
+    s_df_2 = indexer.read_ndjson(searchcaster_file)
+    fids_2 = make_fids(w_df_2, s_df_2)
+    assert isinstance(w_df_2, pd.DataFrame)
+    assert isinstance(s_df_2, pd.DataFrame)
+    assert len(w_df_2) == len(s_df_2)
 
     new_df = indexer.Merger.user(warpcast_file, searchcaster_file, user_file)
-    assert sorted(new_df["fid"].tolist()) == sorted(fids + new_fids)
-    users = list(map(lambda x: indexer.User(**x), new_df.to_dict("records")))
-    assert all(isinstance(user, indexer.User) for user in users)
+    assert sorted(new_df["fid"].tolist()) == sorted(fids_1 + fids_2)
+    users_2 = [indexer.User(**stringify_keys(x)) for x in new_df.to_dict("records")]
+    assert all(isinstance(user, indexer.User) for user in users_2)
 
 
 @pytest.mark.asyncio
-async def test_cast_reaction_integration():
+async def test_cast_reaction_integration() -> None:
     """
     What's tested:
     - cast fetcher, merger
@@ -111,48 +110,46 @@ async def test_cast_reaction_integration():
     r_queued_file = "testdata/reaction_warpcast.ndjson"
     r_data_file = "testdata/reactions.parquet"
 
-    url = indexer.UrlMaker.cast_warpcast(cast_limit)
-    data = await indexer.Fetcher.cast_warpcast(url)
-    indexer.json_append(c_queued_file, data["casts"])
+    c_url_1 = indexer.UrlMaker.cast_warpcast(cast_limit)
+    c_data_1 = await indexer.Fetcher.cast_warpcast(c_url_1)
+    indexer.json_append(c_queued_file, c_data_1["casts"])
 
-    df = indexer.Merger.cast(c_queued_file, c_data_file)
-    assert isinstance(df, pd.DataFrame)
-    assert len(df) == cast_limit
+    c_df_1 = indexer.Merger.cast(c_queued_file, c_data_file)
+    assert isinstance(c_df_1, pd.DataFrame)
+    assert len(c_df_1) == cast_limit
     # TODO: maybe more asserts here
 
+    c_df_1.to_parquet(c_data_file)
     os.remove(c_queued_file)
-    df.to_parquet(c_data_file)
 
-    # test merge with local parquet
-    url = indexer.UrlMaker.cast_warpcast(cast_limit, data["next_cursor"])
-    data = await indexer.Fetcher.cast_warpcast(url)
-    indexer.json_append(c_queued_file, data["casts"])
-    df = indexer.Merger.cast(c_queued_file, c_data_file)
-    assert isinstance(df, pd.DataFrame)
-    assert len(df) == cast_limit * 2
-    assert len(set(list(df["hash"]))) == cast_limit * 2
+    # test merge with local parquet (second batch)
+    c_url_2 = indexer.UrlMaker.cast_warpcast(cast_limit, c_data_1["next_cursor"])
+    c_data_2 = await indexer.Fetcher.cast_warpcast(c_url_2)
+    indexer.json_append(c_queued_file, c_data_2["casts"])
+    c_df_2 = indexer.Merger.cast(c_queued_file, c_data_file)
+    assert isinstance(c_df_2, pd.DataFrame)
+    assert len(c_df_2) == cast_limit * 2
+    assert len(set(list(c_df_2["hash"]))) == cast_limit * 2
+    cs = [indexer.CastWarpcast(**stringify_keys(x)) for x in c_df_2.to_dict("records")]
+    assert all(isinstance(cast, indexer.CastWarpcast) for cast in cs)
 
-    casts = list(map(lambda x: indexer.CastWarpcast(**x), df.to_dict("records")))
-    assert all(isinstance(cast, indexer.CastWarpcast) for cast in casts)
-
-    # test fetching reactions
-    hashes = list(df["hash"])
-    urls = [indexer.UrlMaker.reaction_warpcast(hash) for hash in hashes]
-    data = await indexer.Fetcher.reaction_warpcast(urls)
-    for cast in data:
+    # test fetching reactions (first batch)
+    r_hashes = list(c_df_1["hash"])
+    r_urls = [indexer.UrlMaker.reaction_warpcast(hash) for hash in r_hashes]
+    r_data = await indexer.Fetcher.reaction_warpcast(r_urls)
+    for cast in r_data:
         indexer.json_append(r_queued_file, cast["reactions"])
-
-    df = indexer.Merger.reaction(r_queued_file, r_data_file)
-    assert isinstance(df, pd.DataFrame)
-    assert set(df["target_hash"]).issubset(set(hashes))
-    reactions = list(
-        map(lambda x: indexer.ReactionWarpcast(**x), df.to_dict("records"))
-    )
-    assert all(isinstance(reaction, indexer.ReactionWarpcast) for reaction in reactions)
+    r_df = indexer.Merger.reaction(r_queued_file, r_data_file)
+    assert isinstance(r_df, pd.DataFrame)
+    assert set(r_df["target_hash"]).issubset(set(r_hashes))
+    rs = [
+        indexer.ReactionWarpcast(**stringify_keys(x)) for x in r_df.to_dict("records")
+    ]
+    assert all(isinstance(reaction, indexer.ReactionWarpcast) for reaction in rs)
     # TODO: maybe more asserts here
 
 
-def test_queue_producer():
+def test_queue_producer() -> None:
     """
     What's tested:
     - queue_producer (user, cast, reaction)
@@ -162,61 +159,61 @@ def test_queue_producer():
     # users
     # ==================================================================================
 
-    fids = [random.randint(1, 10000) for i in range(1000)]
-    fids_dict = [{"fid": fid} for fid in fids]
-    uw_file = "testdata/user_warpcast.ndjson"
-    us_file = "testdata/user_searchcaster.ndjson"
-    u_file = "testdata/users.parquet"
+    u_fids = [random.randint(1, 10000) for i in range(1000)]
+    u_fids_dict = [{"fid": fid} for fid in u_fids]
+    u_wf = "testdata/user_warpcast.ndjson"
+    u_sf = "testdata/user_searchcaster.ndjson"
+    u_f = "testdata/users.parquet"
 
-    with open(uw_file, "w") as f:
-        for fid in fids_dict:
+    with open(u_wf, "w") as f:
+        for fid in u_fids_dict:
             f.write(json.dumps(fid) + "\n")
 
-    w_queued_fids = indexer.QueueProducer.user_warpcast(uw_file, u_file)
-    highest_network_fid = max(w_queued_fids)
-    all_fids = list(range(1, highest_network_fid + 1))
-    assert sorted(set(w_queued_fids)) == sorted(set(all_fids) - set(fids))
+    u_w_queued_fids = indexer.QueueProducer.user_warpcast(u_wf, u_f)
+    u_highest_network_fid = max(u_w_queued_fids)
+    u_all_fids = list(range(1, u_highest_network_fid + 1))
+    assert sorted(set(u_w_queued_fids)) == sorted(set(u_all_fids) - set(u_fids))
 
-    half_fids = random.sample(fids, len(fids) // 2)
-    half_fids_dict = [{"fid": fid} for fid in half_fids]
+    u_half_fids = random.sample(u_fids, len(u_fids) // 2)
+    u_half_fids_dict = [{"fid": fid} for fid in u_half_fids]
 
-    with open(us_file, "w") as f:
-        for fid in half_fids_dict:
+    with open(u_sf, "w") as f:
+        for fid in u_half_fids_dict:
             f.write(json.dumps(fid) + "\n")
 
-    s_queued_fids = indexer.QueueProducer.user_searchcaster(uw_file, us_file)
-    assert sorted(set(s_queued_fids)) == sorted(set(fids) - set(half_fids))
+    u_s_queued_fids = indexer.QueueProducer.user_searchcaster(u_wf, u_sf)
+    assert sorted(set(u_s_queued_fids)) == sorted(set(u_fids) - set(u_half_fids))
 
     # ==================================================================================
     # cast and reactions
     # ==================================================================================
 
-    def random_hash(n):
+    def random_hash(n: int) -> str:
         return "".join(random.choices(string.ascii_letters + string.digits, k=n))
 
-    one_week_ago = utils.weeks_ago_to_unixms(1)
-    expected_hash_1 = random_hash(6)
-    expected_hash_2 = random_hash(6)
-    dummy_casts = [
-        {"hash": expected_hash_1, "timestamp": one_week_ago},
-        {"hash": expected_hash_2, "timestamp": utils.weeks_ago_to_unixms(2)},
+    c_one_week_ago = utils.weeks_ago_to_unixms(1)
+    c_expected_hash_1 = random_hash(6)
+    c_expected_hash_2 = random_hash(6)
+    c_dummy_casts = [
+        {"hash": c_expected_hash_1, "timestamp": c_one_week_ago},
+        {"hash": c_expected_hash_2, "timestamp": utils.weeks_ago_to_unixms(2)},
         {"hash": random_hash(6), "timestamp": utils.weeks_ago_to_unixms(3)},
         {"hash": random_hash(6), "timestamp": utils.weeks_ago_to_unixms(4)},
     ]
 
     c_file = "testdata/casts.parquet"
 
-    c_queued_max_timestamp = indexer.QueueProducer.cast_warpcast(c_file)
-    assert c_queued_max_timestamp == 0
+    c_queued_max_timestamp_1 = indexer.QueueProducer.cast_warpcast(c_file)
+    assert c_queued_max_timestamp_1 == 0
 
-    df = pd.DataFrame(dummy_casts)
-    df.to_parquet(c_file)
+    c_df = pd.DataFrame(c_dummy_casts)
+    c_df.to_parquet(c_file)
 
-    c_queued_max_timestamp = indexer.QueueProducer.cast_warpcast(c_file)
-    assert c_queued_max_timestamp == one_week_ago
+    c_queued_max_timestamp_2 = indexer.QueueProducer.cast_warpcast(c_file)
+    assert c_queued_max_timestamp_2 == c_one_week_ago
 
-    reaction_queue_producer = indexer.QueueProducer.reaction_warpcast
-    t = utils.weeks_ago_to_unixms(2) - utils.days_to_ms(1)
-    r_queued_hashes = reaction_queue_producer(t_from=t, data_file=c_file)
-    expected_hashes_tuple = [(expected_hash_1, None), (expected_hash_2, None)]
-    assert set(r_queued_hashes) == set(expected_hashes_tuple)
+    r_t = utils.weeks_ago_to_unixms(2) - utils.days_to_ms(1)
+    r_queue_producer = indexer.QueueProducer.reaction_warpcast
+    r_queued_hashes = r_queue_producer(t_from=r_t, data_file=c_file)
+    r_expected_hashes_tuple = [(c_expected_hash_1, None), (c_expected_hash_2, None)]
+    assert set(r_queued_hashes) == set(r_expected_hashes_tuple)

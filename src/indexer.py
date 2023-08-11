@@ -12,7 +12,7 @@ import pydantic
 import requests
 from dotenv import load_dotenv
 
-import utils
+import src.utils as utils
 
 load_dotenv()
 
@@ -81,6 +81,8 @@ class CastWarpcastResponse(TypedDict):
     next_cursor: Optional[str]
 
 
+# NOTE: reactions to a single cast, in practice, loop through this response
+# then get the data["reactions"]
 class ReactionWarpcastResponse(TypedDict):
     reactions: List[ReactionWarpcast]
     next_cursor: Optional[str]
@@ -100,6 +102,16 @@ def execute_query(query: str) -> List[Any]:
 def execute_query_df(query: str) -> pd.DataFrame:
     con = duckdb.connect(database=":memory:")
     return con.execute(query).fetchdf()
+
+
+def read_ndjson(file_path: str) -> pd.DataFrame:
+    return pd.read_json(
+        file_path, lines=True, dtype_backend="pyarrow", convert_dates=False
+    )
+
+
+def read_parquet(file_path: str) -> pd.DataFrame:
+    return pd.read_parquet(file_path, dtype_backend="pyarrow")
 
 
 def make_request(url: str) -> Any:
@@ -139,6 +151,20 @@ def json_append(file_path: str, data: Sequence[pydantic.BaseModel]) -> None:
         for item in data:
             json.dump(item.model_dump(), f)
             f.write("\n")
+
+
+def get_fid_by_username(username: str) -> Optional[int]:
+    query = "SELECT fid FROM read_parquet('data/users.parquet') "
+    query += f"WHERE username = '{username}'"
+    result = execute_query(query)
+    return result[0] if result else None
+
+
+def get_username_by_fid(fid: int) -> Optional[str]:
+    query = "SELECT username FROM read_parquet('data/users.parquet') "
+    query += f"WHERE fid = {fid}"
+    result = execute_query(query)
+    return result[0] if result else None
 
 
 # ======================================================================================
@@ -451,30 +477,27 @@ class QueueConsumer:
             time.sleep(0.5)
 
     @staticmethod
-    async def user_warpcast(n:int) -> None:
+    async def user_warpcast(n: int) -> None:
         await QueueConsumer.user_queue_consumer(
             UrlMaker.user_warpcast,
             QueueProducer.user_warpcast,
             Fetcher.user_warpcast,
-            n
+            n,
         )
 
     @staticmethod
-    async def user_searchcaster(n:int) -> None:
+    async def user_searchcaster(n: int) -> None:
         await QueueConsumer.user_queue_consumer(
             UrlMaker.user_searchcaster,
             QueueProducer.user_searchcaster,
             Fetcher.user_searchcaster,
-            n
+            n,
         )
 
     @staticmethod
-    async def user_ensdata(n:int) -> None:
+    async def user_ensdata(n: int) -> None:
         await QueueConsumer.user_queue_consumer(
-            UrlMaker.user_ensdata,
-            QueueProducer.user_ensdata,
-            Fetcher.user_ensdata,
-            n
+            UrlMaker.user_ensdata, QueueProducer.user_ensdata, Fetcher.user_ensdata, n
         )
 
     @staticmethod
@@ -520,24 +543,14 @@ class Merger:
         user_file: str = "data/users.parquet",
     ) -> pd.DataFrame:
         def make_queued_df(warpcast_file: str, searchcaster_file: str) -> pd.DataFrame:
-            df1 = pd.read_json(
-                warpcast_file,
-                lines=True,
-                dtype_backend="pyarrow",
-            )
-            df2 = pd.read_json(
-                searchcaster_file,
-                lines=True,
-                dtype_backend="pyarrow",
-                convert_dates=False,
-            )
-
+            df1 = read_ndjson(warpcast_file)
+            df2 = read_ndjson(searchcaster_file)
             df1 = df1.drop_duplicates(subset=["fid"])
             df2 = df2.drop_duplicates(subset=["fid"])
             return pd.merge(df1, df2, on="fid", how="left")
 
         try:
-            df = pd.read_parquet(user_file, dtype_backend="pyarrow")
+            df = read_parquet(user_file)
         except Exception:
             df = pd.DataFrame()
 
@@ -547,12 +560,10 @@ class Merger:
 
     @staticmethod
     def cast(queued_file: str, data_file: str) -> pd.DataFrame:
-        queued_df = pd.read_json(
-            queued_file, lines=True, dtype_backend="pyarrow", convert_dates=False
-        )
+        queued_df = read_ndjson(queued_file)
 
         try:
-            df = pd.read_parquet(data_file, dtype_backend="pyarrow")
+            df = read_parquet(data_file)
         except Exception:
             df = pd.DataFrame()
 

@@ -11,13 +11,16 @@ import src.indexer as indexer
 #     WHERE array_length(images) = 0;
 # """
 
+# F9766E
+# 00BFC4
+
 
 def channel_volume(
     t1: int = indexer.TimeUtils.ymd_to_unixms(2021, 7, 1),
     t2: int = indexer.TimeUtils.ymd_to_unixms(2021, 8, 1),
     limit: int = 5,
 ) -> dict[str, Any]:
-    q_volume = f"""
+    query_volume = f"""
     SELECT channel_id, COUNT(*) as count
     FROM read_parquet('data/casts.parquet')
     WHERE timestamp >= {t1} AND timestamp < {t2} AND channel_id IS NOT NULL
@@ -26,7 +29,7 @@ def channel_volume(
     LIMIT {limit};
     """
 
-    q_reaction_avg = f"""
+    query_reaction_avg = f"""
     SELECT c.channel_id,
            COUNT(r.hash) / CAST(COUNT(DISTINCT c.hash) AS FLOAT) as reaction_per_cast
     FROM read_parquet('data/casts.parquet') AS c
@@ -38,8 +41,8 @@ def channel_volume(
     LIMIT {limit};
     """
 
-    df_volume = indexer.execute_query_df(q_volume)
-    df_reaction_avg = indexer.execute_query_df(q_reaction_avg)
+    df_volume = indexer.execute_query_df(query_volume)
+    df_reaction_avg = indexer.execute_query_df(query_reaction_avg)
 
     return {
         "volume": df_volume.to_dict(orient="records"),
@@ -51,21 +54,17 @@ def cast_reaction_volume(
     t1: int = indexer.TimeUtils.ymd_to_unixms(2021, 7, 1),
     t2: int = indexer.TimeUtils.ymd_to_unixms(2021, 8, 1),
 ) -> dict[str, Any]:
-    q1 = "SELECT timestamp FROM read_parquet('data/casts.parquet') "
-    q1 += f"WHERE timestamp >= {t1} AND timestamp < {t2}"
-    ts1 = indexer.execute_query(q1)
+    def daily_bucket(table: str) -> list[tuple[datetime.date, int]]:
+        def make_date(timestamp: int) -> datetime.date:
+            return datetime.datetime.utcfromtimestamp(timestamp / 1000.0).date()
 
-    q2 = "SELECT timestamp FROM read_parquet('data/reactions.parquet') "
-    q2 += f"WHERE timestamp >= {t1} AND timestamp < {t2}"
-    ts2 = indexer.execute_query(q2)
+        query = f"SELECT timestamp FROM read_parquet('data/{table}.parquet') "
+        query += f"WHERE timestamp >= {t1} AND timestamp < {t2}"
+        timestamps = indexer.execute_query(query)
+        dates = [make_date(ts) for ts in timestamps]
+        return sorted(Counter(dates).items())
 
-    def daily_bucket(xs: list[int]) -> list[tuple[datetime.date, int]]:
-        date_list = [datetime.datetime.utcfromtimestamp(x / 1000.0).date() for x in xs]
-        date_counts = Counter(date_list)
-        result = sorted([(date, count) for date, count in date_counts.items()])
-        return result
-
-    return {"casts": daily_bucket(ts1), "reactions": daily_bucket(ts2)}
+    return {"casts": daily_bucket("casts"), "reactions": daily_bucket("reactions")}
 
 
 def popular_users(
@@ -73,7 +72,7 @@ def popular_users(
     t2: int = indexer.TimeUtils.ymd_to_unixms(2021, 8, 1),
     limit: int = 20,
 ) -> list[dict[Hashable, Any]]:
-    q = f"""
+    query = f"""
     SELECT c.author_fid AS fid, COUNT(*) AS count
     FROM read_parquet('data/reactions.parquet') r
     INNER JOIN read_parquet('data/casts.parquet') c
@@ -82,9 +81,8 @@ def popular_users(
     ORDER BY count DESC
     LIMIT {limit}
     """
-    df = indexer.execute_query_df(q)
+    df = indexer.execute_query_df(query)
     df["username"] = df["fid"].apply(indexer.get_username_by_fid)
-
     return df.to_dict(orient="records")
 
 
@@ -92,18 +90,21 @@ def activation_table(
     t1: int = indexer.TimeUtils.ymd_to_unixms(2021, 7, 1),
     t2: int = indexer.TimeUtils.ymd_to_unixms(2021, 8, 1),
 ) -> list[dict[Hashable, Any]]:
-    q = f"""
+    counts = [0, 1, 5, 10, 25, 50, 100, 250]
+    query_counts = ", ".join(
+        [
+            f"CAST(SUM(CASE WHEN cast_count >= {c} THEN 1 ELSE 0 END) AS INT)"
+            f" AS cast_{c}_plus"
+            for c in counts
+        ]
+    )
+
+    query = f"""
     SELECT 
-        DATE_TRUNC('week', TIMESTAMP 'epoch' + registered_at * INTERVAL '1 millisecond') AS week,
+        DATE_TRUNC('week', TIMESTAMP 'epoch' + registered_at * INTERVAL '1 millisecond')
+            AS week,
         COUNT(fid) AS total_registered,
-        CAST(SUM(CASE WHEN cast_count = 0 THEN 1 ELSE 0 END) AS INT) AS cast_0,
-        CAST(SUM(CASE WHEN cast_count >= 1 THEN 1 ELSE 0 END) AS INT) AS cast_1_plus,
-        CAST(SUM(CASE WHEN cast_count >= 5 THEN 1 ELSE 0 END) AS INT) AS cast_5_plus,
-        CAST(SUM(CASE WHEN cast_count >= 10 THEN 1 ELSE 0 END) AS INT) AS cast_10_plus,
-        CAST(SUM(CASE WHEN cast_count >= 25 THEN 1 ELSE 0 END) AS INT) AS cast_25_plus,
-        CAST(SUM(CASE WHEN cast_count >= 50 THEN 1 ELSE 0 END) AS INT) AS cast_50_plus,
-        CAST(SUM(CASE WHEN cast_count >= 100 THEN 1 ELSE 0 END) AS INT) AS cast_100_plus,
-        CAST(SUM(CASE WHEN cast_count >= 250 THEN 1 ELSE 0 END) AS INT) AS cast_250_plus
+        {query_counts}
     FROM (
         SELECT 
             u.fid, 
@@ -117,6 +118,6 @@ def activation_table(
     GROUP BY week
     """
 
-    df = indexer.execute_query_df(q)
+    df = indexer.execute_query_df(query)
     df["week"] = df["week"].dt.strftime("%Y-%m-%d")
     return df.to_dict(orient="records")

@@ -86,3 +86,37 @@ def popular_users(
     df["username"] = df["fid"].apply(indexer.get_username_by_fid)
 
     return df.to_dict(orient="records")
+
+
+def activation_table(
+    t1: int = indexer.TimeUtils.ymd_to_unixms(2021, 7, 1),
+    t2: int = indexer.TimeUtils.ymd_to_unixms(2021, 8, 1),
+) -> list[dict[Hashable, Any]]:
+    q = f"""
+    SELECT 
+        DATE_TRUNC('week', TIMESTAMP 'epoch' + registered_at * INTERVAL '1 millisecond') AS week,
+        COUNT(fid) AS total_registered,
+        CAST(SUM(CASE WHEN cast_count = 0 THEN 1 ELSE 0 END) AS INT) AS cast_0,
+        CAST(SUM(CASE WHEN cast_count >= 1 THEN 1 ELSE 0 END) AS INT) AS cast_1_plus,
+        CAST(SUM(CASE WHEN cast_count >= 5 THEN 1 ELSE 0 END) AS INT) AS cast_5_plus,
+        CAST(SUM(CASE WHEN cast_count >= 10 THEN 1 ELSE 0 END) AS INT) AS cast_10_plus,
+        CAST(SUM(CASE WHEN cast_count >= 25 THEN 1 ELSE 0 END) AS INT) AS cast_25_plus,
+        CAST(SUM(CASE WHEN cast_count >= 50 THEN 1 ELSE 0 END) AS INT) AS cast_50_plus,
+        CAST(SUM(CASE WHEN cast_count >= 100 THEN 1 ELSE 0 END) AS INT) AS cast_100_plus,
+        CAST(SUM(CASE WHEN cast_count >= 250 THEN 1 ELSE 0 END) AS INT) AS cast_250_plus
+    FROM (
+        SELECT 
+            u.fid, 
+            u.registered_at,
+            COUNT(c.timestamp) AS cast_count
+        FROM read_parquet('data/users.parquet') u
+        LEFT JOIN read_parquet('data/casts.parquet') c ON u.fid = c.author_fid
+        WHERE u.registered_at >= {t1} AND u.registered_at < {t2}
+        GROUP BY u.fid, u.registered_at
+    ) subquery
+    GROUP BY week
+    """
+
+    df = indexer.execute_query_df(q)
+    df["week"] = df["week"].dt.strftime("%Y-%m-%d")
+    return df.to_dict(orient="records")

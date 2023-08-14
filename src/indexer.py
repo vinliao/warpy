@@ -250,11 +250,12 @@ def is_valid_ethereum_address(address: str) -> bool:
     return bool(re.match(r"^(0x)?[0-9a-f]{40}$", address.lower()))
 
 
-# def max_gap(xs: List[int]) -> Optional[int]:
-#     import numpy as np
+def max_gap(xs: List[int]) -> Optional[int]:
+    import numpy as np
 
-#     diffs = np.diff(np.sort(xs))
-#     return diffs.max() if len(xs) > 0 else None
+    diffs = np.diff(np.sort(xs))
+    return diffs.max() if len(xs) > 0 else None
+
 
 # ======================================================================================
 # indexer

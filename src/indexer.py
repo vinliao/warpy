@@ -193,7 +193,7 @@ class TimeConverter:
         return TimeConverter.ms_now() - TimeConverter.to_ms(factor, units)
 
     @staticmethod
-    def unixms_to_time_ago(factor: str, ms: int) -> float:
+    def unixms_to_ago(factor: str, ms: int) -> float:
         return TimeConverter.from_ms(factor, TimeConverter.ms_now() - ms)
 
 
@@ -563,9 +563,7 @@ class QueueConsumer:
             cursor = result["next_cursor"]
             json_append("queue/cast_warpcast.ndjson", casts)
             timestamp_diff = new_timestamp - max_timestamp
-            timestamp_diff_str = TimeConverter.from_ms(
-                factor="days", ms=timestamp_diff
-            )
+            timestamp_diff_str = TimeConverter.from_ms(factor="days", ms=timestamp_diff)
             print(f"cast_warpcast: {timestamp_diff_str} days left")
             time.sleep(0.5)
             if cursor is None:

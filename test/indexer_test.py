@@ -3,12 +3,13 @@ import json
 import os
 import random
 import string
+import time
 from typing import Any, Dict, Generator, Hashable, List
 
 import pandas as pd
 import pytest
 
-from src import indexer, utils
+from src import indexer
 
 
 @pytest.fixture(autouse=True)
@@ -30,6 +31,11 @@ def setup_and_teardown() -> Generator[None, None, None]:
 
 def stringify_keys(d: Dict[Hashable, Any]) -> Dict[str, Any]:
     return {str(key): value for key, value in d.items()}
+
+
+# ======================================================================================
+# integration tests
+# ======================================================================================
 
 
 @pytest.mark.asyncio
@@ -103,7 +109,7 @@ async def test_cast_reaction_integration() -> None:
     - reaction fetcher (from fetched cast hashes), merger
     """
 
-    cast_limit = 10
+    cast_limit = 50
 
     c_queued_file = "testdata/cast_warpcast.ndjson"
     c_data_file = "testdata/casts.parquet"
@@ -191,14 +197,23 @@ def test_queue_producer() -> None:
     def random_hash(n: int) -> str:
         return "".join(random.choices(string.ascii_letters + string.digits, k=n))
 
-    c_one_week_ago = utils.weeks_ago_to_unixms(1)
+    c_one_week_ago = indexer.TimeConverter.ago_to_unixms(factor="weeks", units=1)
     c_expected_hash_1 = random_hash(6)
     c_expected_hash_2 = random_hash(6)
     c_dummy_casts = [
         {"hash": c_expected_hash_1, "timestamp": c_one_week_ago},
-        {"hash": c_expected_hash_2, "timestamp": utils.weeks_ago_to_unixms(2)},
-        {"hash": random_hash(6), "timestamp": utils.weeks_ago_to_unixms(3)},
-        {"hash": random_hash(6), "timestamp": utils.weeks_ago_to_unixms(4)},
+        {
+            "hash": c_expected_hash_2,
+            "timestamp": indexer.TimeConverter.ago_to_unixms(factor="weeks", units=2),
+        },
+        {
+            "hash": random_hash(6),
+            "timestamp": indexer.TimeConverter.ago_to_unixms(factor="weeks", units=3),
+        },
+        {
+            "hash": random_hash(6),
+            "timestamp": indexer.TimeConverter.ago_to_unixms(factor="weeks", units=4),
+        },
     ]
 
     c_file = "testdata/casts.parquet"
@@ -212,8 +227,94 @@ def test_queue_producer() -> None:
     c_queued_max_timestamp_2 = indexer.QueueProducer.cast_warpcast(c_file)
     assert c_queued_max_timestamp_2 == c_one_week_ago
 
-    r_t = utils.weeks_ago_to_unixms(2) - utils.days_to_ms(1)
+    r_one_day_t = indexer.TimeConverter.to_ms(factor="days", units=1)
+    r_t = indexer.TimeConverter.ago_to_unixms(factor="weeks", units=2) - r_one_day_t
     r_queue_producer = indexer.QueueProducer.reaction_warpcast
     r_queued_hashes = r_queue_producer(t_from=r_t, data_file=c_file)
     r_expected_hashes_tuple = [(c_expected_hash_1, None), (c_expected_hash_2, None)]
     assert set(r_queued_hashes) == set(r_expected_hashes_tuple)
+
+
+# ======================================================================================
+# unit tests
+# ======================================================================================
+
+
+def test_ms_now() -> None:
+    # Test that ms_now is returning the current time in milliseconds
+    assert abs(indexer.TimeConverter.ms_now() - int(round(time.time() * 1000))) < 10
+
+
+@pytest.mark.parametrize(
+    "factor, units, expected_ms",
+    [
+        ("minutes", 1, 60 * 1000),
+        ("hours", 2, 2 * 60 * 60 * 1000),
+        ("days", 1, 24 * 60 * 60 * 1000),
+        ("weeks", 1, 7 * 24 * 60 * 60 * 1000),
+        ("months", 1, 30 * 24 * 60 * 60 * 1000),
+        ("years", 1, 365 * 24 * 60 * 60 * 1000),
+    ],
+)
+def test_to_ms(factor: str, units: int, expected_ms: int) -> None:
+    # Test the conversion to milliseconds for all factors
+    assert indexer.TimeConverter.to_ms(factor, units) == expected_ms
+
+
+@pytest.mark.parametrize(
+    "factor, ms, expected_units",
+    [
+        ("minutes", 60 * 1000, 1),
+        ("hours", 2 * 60 * 60 * 1000, 2),
+        ("days", 24 * 60 * 60 * 1000, 1),
+        ("weeks", 7 * 24 * 60 * 60 * 1000, 1),
+        ("months", 30 * 24 * 60 * 60 * 1000, 1),
+        ("years", 365 * 24 * 60 * 60 * 1000, 1),
+    ],
+)
+def test_from_ms(factor: str, ms: int, expected_units: int) -> None:
+    # Test the conversion from milliseconds for all factors
+    assert indexer.TimeConverter.from_ms(factor, ms) == expected_units
+
+
+@pytest.mark.parametrize(
+    "factor, units",
+    [
+        ("minutes", 1),
+        ("hours", 2),
+        ("days", 1),
+        ("weeks", 1),
+        ("months", 1),
+        ("years", 1),
+    ],
+)
+def test_ago_to_unixms(factor: str, units: int) -> None:
+    # Test the conversion of time ago to UNIX milliseconds for all factors
+    ms = indexer.TimeConverter.ago_to_unixms(factor, units)
+    assert (
+        abs(
+            ms
+            - (
+                indexer.TimeConverter.ms_now()
+                - indexer.TimeConverter.to_ms(factor, units)
+            )
+        )
+        < 10
+    )
+
+
+@pytest.mark.parametrize(
+    "factor, units",
+    [
+        ("minutes", 1),
+        ("hours", 2),
+        ("days", 1),
+        ("weeks", 1),
+        ("months", 1),
+        ("years", 1),
+    ],
+)
+def test_unixms_to_ago(factor: str, units: int) -> None:
+    # Test the conversion of UNIX milliseconds to time ago for all factors
+    ms = indexer.TimeConverter.ms_now() - indexer.TimeConverter.to_ms(factor, units)
+    assert abs(indexer.TimeConverter.unixms_to_ago(factor, ms) - units) < 0.01

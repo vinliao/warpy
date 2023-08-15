@@ -104,18 +104,17 @@ def execute_query_df(query: str) -> pd.DataFrame:
 
 
 def read_ndjson(file_path: str) -> pd.DataFrame:
+    # wrapper exist because i want pyarrow by default
+    # pyarrow because it preserves dtypes
     return pd.read_json(
         file_path, lines=True, dtype_backend="pyarrow", convert_dates=False
     )
 
 
 def read_parquet(file_path: str) -> pd.DataFrame:
+    # wrapper exist because i want pyarrow by default
+    # pyarrow because it preserves dtypes
     return pd.read_parquet(file_path, dtype_backend="pyarrow")
-
-
-def make_request(url: str) -> Any:
-    response = requests.get(url)
-    return response.json()
 
 
 def make_warpcast_request(url: str) -> Any:
@@ -216,30 +215,19 @@ def max_gap(xs: List[int]) -> Optional[int]:
 
 
 class UrlMaker:
+    @staticmethod
+    def make_url(base_url: str, endpoint: str, **params: dict[str, Any]) -> str:
+        query_params = "&".join(f"{key}={value}" for key, value in params.items())
+        return f"{base_url}{endpoint}?{query_params}"
+
     warpcast_url = "https://api.warpcast.com/v2"
     searchcaster_url = "https://searchcaster.xyz/api"
 
-    @staticmethod
-    def user_warpcast(fid: int) -> str:
-        return f"{UrlMaker.warpcast_url}/user?fid={fid}"
-
-    @staticmethod
-    def user_searchcaster(fid: int) -> str:
-        return f"{UrlMaker.searchcaster_url}/profiles?fid={fid}"
-
-    @staticmethod
-    def user_ensdata(address: str) -> str:
-        return f"https://ensdata.net/{address}"
-
-    @staticmethod
-    def cast_warpcast(limit: int = 1000, cursor: Optional[str] = None) -> str:
-        url = f"{UrlMaker.warpcast_url}/recent-casts?limit={limit}"
-        return f"{url}&cursor={cursor}" if cursor else url
-
-    @staticmethod
-    def reaction_warpcast(hash: str, cursor: Optional[str] = None) -> str:
-        url = f"{UrlMaker.warpcast_url}/cast-reactions?castHash={hash}&limit=100"
-        return f"{url}&cursor={cursor}" if cursor else url
+    user_warpcast = functools.partial(make_url, warpcast_url, "/user")
+    user_searchcaster = functools.partial(make_url, searchcaster_url, "/profiles")
+    user_ensdata = functools.partial(lambda address: f"https://ensdata.net/{address}")
+    cast_warpcast = functools.partial(make_url, warpcast_url, "/recent-casts")
+    reaction_warpcast = functools.partial(make_url, warpcast_url, "/cast-reactions")
 
 
 class Extractor:
@@ -375,7 +363,7 @@ class Fetcher:
                 return await response.json()
 
     @staticmethod
-    async def user_warpcast(urls: str) -> List[UserWarpcast]:
+    async def user_warpcast(urls: List[str]) -> List[UserWarpcast]:
         async def _fetch(url: str) -> Optional[UserWarpcast]:
             data = await Fetcher.make_request(url, Fetcher.api_key)
             return Extractor.user_warpcast(data["result"])
@@ -383,7 +371,7 @@ class Fetcher:
         return await asyncio.gather(*[_fetch(url) for url in urls])
 
     @staticmethod
-    async def user_searchcaster(urls: str) -> List[UserSearchcaster]:
+    async def user_searchcaster(urls: List[str]) -> List[UserSearchcaster]:
         async def _fetch(url: str) -> Optional[UserSearchcaster]:
             data = await Fetcher.make_request(url)
             return Extractor.user_searchcaster(data[0])
@@ -391,7 +379,7 @@ class Fetcher:
         return await asyncio.gather(*[_fetch(url) for url in urls])
 
     @staticmethod
-    async def user_ensdata(urls: str) -> List[UserEnsdata]:
+    async def user_ensdata(urls: List[str]) -> List[UserEnsdata]:
         async def _fetch(url: str) -> Optional[UserEnsdata]:
             data = await Fetcher.make_request(url)
             return Extractor.user_ensdata(data)

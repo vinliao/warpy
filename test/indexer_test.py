@@ -52,19 +52,14 @@ async def test_user_integration() -> None:
     def make_fids(df1: pd.DataFrame, df2: pd.DataFrame) -> List[int]:
         return list(set(df1["fid"].tolist() + df2["fid"].tolist()))
 
-    async def fetch_write(url_maker_fn, fetcher_fn, fids: List[int]) -> None:  # type: ignore
-        urls = [url_maker_fn(fid) for fid in fids]
-        users = await fetcher_fn(urls)
-        indexer.json_append(f"testdata/{url_maker_fn.__name__}.ndjson", users)
-
     async def fetch_fids(fids: List[int]) -> None:
-        functions = [
-            (indexer.UrlMaker.user_warpcast, indexer.Fetcher.user_warpcast),
-            (indexer.UrlMaker.user_searchcaster, indexer.Fetcher.user_searchcaster),
-        ]
+        w_urls = [indexer.UrlMaker.user_warpcast(fid=fid) for fid in fids]
+        w_u = await indexer.Fetcher.user_warpcast(w_urls)
+        indexer.json_append("testdata/user_warpcast.ndjson", w_u)
 
-        for url_maker, fetcher in functions:
-            await fetch_write(url_maker, fetcher, fids)
+        s_urls = [indexer.UrlMaker.user_searchcaster(fid=fid) for fid in fids]
+        s_u = await indexer.Fetcher.user_searchcaster(s_urls)
+        indexer.json_append("testdata/user_searchcaster.ndjson", s_u)
 
     warpcast_file = "testdata/user_warpcast.ndjson"
     searchcaster_file = "testdata/user_searchcaster.ndjson"
@@ -116,7 +111,7 @@ async def test_cast_reaction_integration() -> None:
     r_queued_file = "testdata/reaction_warpcast.ndjson"
     r_data_file = "testdata/reactions.parquet"
 
-    c_url_1 = indexer.UrlMaker.cast_warpcast(cast_limit)
+    c_url_1 = indexer.UrlMaker.cast_warpcast(limit=cast_limit)
     c_data_1 = await indexer.Fetcher.cast_warpcast(c_url_1)
     indexer.json_append(c_queued_file, c_data_1["casts"])
 
@@ -129,7 +124,9 @@ async def test_cast_reaction_integration() -> None:
     os.remove(c_queued_file)
 
     # test merge with local parquet (second batch)
-    c_url_2 = indexer.UrlMaker.cast_warpcast(cast_limit, c_data_1["next_cursor"])
+    c_url_2 = indexer.UrlMaker.cast_warpcast(
+        limit=cast_limit, cursor=c_data_1["next_cursor"]
+    )
     c_data_2 = await indexer.Fetcher.cast_warpcast(c_url_2)
     indexer.json_append(c_queued_file, c_data_2["casts"])
     c_df_2 = indexer.Merger.cast(c_queued_file, c_data_file)
@@ -141,7 +138,7 @@ async def test_cast_reaction_integration() -> None:
 
     # test fetching reactions (first batch)
     r_hashes = list(c_df_1["hash"])
-    r_urls = [indexer.UrlMaker.reaction_warpcast(hash) for hash in r_hashes]
+    r_urls = [indexer.UrlMaker.reaction_warpcast(castHash=hash) for hash in r_hashes]
     r_data = await indexer.Fetcher.reaction_warpcast(r_urls)
     for cast in r_data:
         indexer.json_append(r_queued_file, cast["reactions"])
@@ -281,7 +278,7 @@ def test_from_ms(factor: str, ms: int, expected_units: int) -> None:
     "factor, units",
     [
         ("minutes", 1),
-        ("hours", 2),
+        ("hours", 1),
         ("days", 1),
         ("weeks", 1),
         ("months", 1),
@@ -290,24 +287,17 @@ def test_from_ms(factor: str, ms: int, expected_units: int) -> None:
 )
 def test_ago_to_unixms(factor: str, units: int) -> None:
     # Test the conversion of time ago to UNIX milliseconds for all factors
-    ms = indexer.TimeConverter.ago_to_unixms(factor, units)
-    assert (
-        abs(
-            ms
-            - (
-                indexer.TimeConverter.ms_now()
-                - indexer.TimeConverter.to_ms(factor, units)
-            )
-        )
-        < 10
-    )
+    ms_ago = indexer.TimeConverter.ago_to_unixms(factor, units)
+    now = indexer.TimeConverter.ms_now()
+    ms = indexer.TimeConverter.to_ms(factor, units)
+    assert abs(ms_ago - (now - ms)) < 10
 
 
 @pytest.mark.parametrize(
     "factor, units",
     [
         ("minutes", 1),
-        ("hours", 2),
+        ("hours", 1),
         ("days", 1),
         ("weeks", 1),
         ("months", 1),

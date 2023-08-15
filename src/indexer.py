@@ -124,12 +124,22 @@ def make_warpcast_request(url: str) -> Any:
     return response.json()
 
 
+def fetch_highest_fid() -> int:
+    try:
+        url = "https://api.warpcast.com/v2/recent-users?limit=1"
+        response = make_warpcast_request(url)
+        fid = response["result"]["users"][0]["fid"]
+        assert isinstance(fid, int)
+        return fid
+    except Exception as e:
+        print(f"Error fetching highest fid: {e}")
+        return 10000
+
+
 def get_property(property: str, file_path: str) -> List[Any]:
     file_format = file_path.split(".")[-1]
-    if file_format == "ndjson" or file_format == "json":
-        query = f"SELECT {property} FROM read_json_auto('{file_path}')"
-    else:
-        query = f"SELECT {property} FROM read_parquet('{file_path}')"
+    read_fn = "read_json_auto" if file_format in ("ndjson", "json") else "read_parquet"
+    query = f"SELECT {property} FROM {read_fn}('{file_path}')"
 
     try:
         return execute_query(query)
@@ -242,8 +252,9 @@ class Extractor:
 
     @staticmethod
     def user_warpcast(user: Any) -> Optional[UserWarpcast]:
+        user_getter = functools.partial(Extractor.get_in, user)
         try:
-            location = Extractor.get_in(user, ["user", "profile", "location"], {})
+            location = user_getter(["user", "profile", "location"], {})
             location_id = location.get("placeId") or None
             location_description = location.get("description") or None
 
@@ -251,18 +262,18 @@ class Extractor:
             collections = [collection.get("id") for collection in collections]
 
             return UserWarpcast(
-                fid=Extractor.get_in(user, ["user", "fid"]),
-                username=Extractor.get_in(user, ["user", "username"]),
-                display_name=Extractor.get_in(user, ["user", "displayName"]),
-                pfp_url=Extractor.get_in(user, ["user", "pfp", "url"]),
-                bio_text=Extractor.get_in(user, ["user", "profile", "bio", "text"]),
-                following_count=Extractor.get_in(user, ["user", "followingCount"], 0),
-                follower_count=Extractor.get_in(user, ["user", "followerCount"], 0),
+                fid=user_getter(["user", "fid"]),
+                username=user_getter(["user", "username"]),
+                display_name=user_getter(["user", "displayName"]),
+                pfp_url=user_getter(["user", "pfp", "url"]),
+                bio_text=user_getter(["user", "profile", "bio", "text"]),
+                following_count=user_getter(["user", "followingCount"], 0),
+                follower_count=user_getter(["user", "followerCount"], 0),
                 location_id=location_id,
                 location_description=location_description,
-                verified=Extractor.get_in(user, ["user", "pfp", "verified"], False),
-                is_active=Extractor.get_in(user, ["user", "activeOnFcNetwork"], False),
-                inviter_fid=Extractor.get_in(user, ["inviter", "fid"]),
+                verified=user_getter(["user", "pfp", "verified"], False),
+                is_active=user_getter(["user", "activeOnFcNetwork"], False),
+                inviter_fid=user_getter(["inviter", "fid"]),
                 onchain_collections=collections,
             )
         except Exception as e:
@@ -271,12 +282,13 @@ class Extractor:
 
     @staticmethod
     def user_searchcaster(user: Any) -> Optional[UserSearchcaster]:
+        user_getter = functools.partial(Extractor.get_in, user)
         try:
             return UserSearchcaster(
-                fid=Extractor.get_in(user, ["body", "id"]),
-                generated_farcaster_address=Extractor.get_in(user, ["body", "address"]),
-                address=Extractor.get_in(user, ["connectedAddress"]),
-                registered_at=Extractor.get_in(user, ["body", "registeredAt"]),
+                fid=user_getter(["body", "id"]),
+                generated_farcaster_address=user_getter(["body", "address"]),
+                address=user_getter(["connectedAddress"]),
+                registered_at=user_getter(["body", "registeredAt"]),
             )
         except Exception as e:
             print(f"Failed to create UserSearchcaster due to {str(e)}")
@@ -284,19 +296,30 @@ class Extractor:
 
     @staticmethod
     def user_ensdata(user: Any) -> Optional[UserEnsdata]:
-        if Extractor.get_in(user, ["error"]) is True:
+        user_getter = functools.partial(Extractor.get_in, user)
 
-            def extract_ethereum_address(s: str) -> Optional[str]:
-                import re
+        try:
+            return UserEnsdata(
+                address=user_getter(["address"]),
+                discord=user_getter(["discord"]),
+                email=user_getter(["email"]),
+                ens=user_getter(["ens"]),
+                github=user_getter(["github"]),
+                telegram=user_getter(["telegram"]),
+                twitter=user_getter(["twitter"]),
+                url=user_getter(["url"]),
+            )
+        except Exception as e:
+            print(f"Failed to create UserEnsdata due to {str(e)}")
 
-                match = re.search(r"0x[a-fA-F0-9]{40}", s)
-                return match.group() if match else None
+            import re
 
-            address = extract_ethereum_address(user["message"])
+            address = re.search(r"0x[a-fA-F0-9]{40}", user.get("message"))
             if address is None:
                 return None
+
             return UserEnsdata(
-                address=address,
+                address=address.group(),
                 discord=None,
                 email=None,
                 ens=None,
@@ -306,35 +329,21 @@ class Extractor:
                 url=None,
             )
 
-        try:
-            return UserEnsdata(
-                address=Extractor.get_in(user, ["address"]),
-                discord=Extractor.get_in(user, ["discord"]),
-                email=Extractor.get_in(user, ["email"]),
-                ens=Extractor.get_in(user, ["ens"]),
-                github=Extractor.get_in(user, ["github"]),
-                telegram=Extractor.get_in(user, ["telegram"]),
-                twitter=Extractor.get_in(user, ["twitter"]),
-                url=Extractor.get_in(user, ["url"]),
-            )
-        except Exception as e:
-            print(f"Failed to create UserEnsdata due to {str(e)}")
-            return None
-
     @staticmethod
     def cast_warpcast(cast: Any) -> CastWarpcast:
-        images = Extractor.get_in(cast, ["embeds", "images"], [])
-        tags: List[Any] = Extractor.get_in(cast, ["tags"], [])
-        mentions = Extractor.get_in(cast, ["mentions"], [])
+        cast_getter = functools.partial(Extractor.get_in, cast)
+        images = cast_getter(["embeds", "images"], [])
+        tags = cast_getter(["tags"], [])
+        mentions = cast_getter(["mentions"], [])
         channel_tag = next((tag for tag in tags if tag["type"] == "channel"), None)
 
         return CastWarpcast(
-            hash=Extractor.get_in(cast, ["hash"]),
-            thread_hash=Extractor.get_in(cast, ["threadHash"]),
-            text=Extractor.get_in(cast, ["text"]),
-            timestamp=Extractor.get_in(cast, ["timestamp"]),
-            author_fid=Extractor.get_in(cast, ["author", "fid"]),
-            parent_hash=Extractor.get_in(cast, ["parentHash"]),
+            hash=cast_getter(["hash"]),
+            thread_hash=cast_getter(["threadHash"]),
+            text=cast_getter(["text"]),
+            timestamp=cast_getter(["timestamp"]),
+            author_fid=cast_getter(["author", "fid"]),
+            parent_hash=cast_getter(["parentHash"]),
             images=[image["sourceUrl"] for image in images],
             channel_id=channel_tag["id"] if channel_tag else None,
             channel_description=channel_tag["name"] if channel_tag else None,
@@ -343,12 +352,13 @@ class Extractor:
 
     @staticmethod
     def reaction_warpcast(reaction: Any) -> ReactionWarpcast:
+        reaction_getter = functools.partial(Extractor.get_in, reaction)
         return ReactionWarpcast(
-            type=Extractor.get_in(reaction, ["type"]),
-            hash=Extractor.get_in(reaction, ["hash"]),
-            timestamp=Extractor.get_in(reaction, ["timestamp"]),
-            target_hash=Extractor.get_in(reaction, ["castHash"]),
-            reactor_fid=Extractor.get_in(reaction, ["reactor", "fid"]),
+            type=reaction_getter(["type"]),
+            hash=reaction_getter(["hash"]),
+            timestamp=reaction_getter(["timestamp"]),
+            target_hash=reaction_getter(["castHash"]),
+            reactor_fid=reaction_getter(["reactor", "fid"]),
         )
 
 
@@ -416,64 +426,47 @@ class QueueProducer:
         queued_file: str = "queue/user_warpcast.ndjson",
         data_file: str = "data/users.parquet",
     ) -> List[int]:
-        def _get_local_fids(queued_file: str, data_file: str) -> List[int]:
-            fids1 = get_fids(queued_file)
-            fids2 = get_fids(data_file)
-            return list(set(fids1).union(set(fids2)))
-
-        def _fetch_highest_fid() -> int:
-            try:
-                url = "https://api.warpcast.com/v2/recent-users?limit=1"
-                response = make_warpcast_request(url)
-                fid = response["result"]["users"][0]["fid"]
-                assert isinstance(fid, int)
-                return fid
-            except Exception as e:
-                print(f"Error fetching highest fid: {e}")
-                return 10000
-
-        network_fids = range(1, _fetch_highest_fid() + 1)
-        local_fids = _get_local_fids(queued_file, data_file)
-        return list(set(network_fids) - set(local_fids))  # set difference
+        local_fids = set.union(*map(set, map(get_fids, [queued_file, data_file])))
+        network_fids = set(range(1, fetch_highest_fid() + 1))
+        return list(set.difference(network_fids, local_fids))
 
     @staticmethod
     def user_searchcaster(
         warpcast_queue_file: str = "queue/user_warpcast.ndjson",
         searchcaster_queue_file: str = "queue/user_searchcaster.ndjson",
     ) -> List[int]:
-        # NOTE: not including parquet users because it's gonna be be merged with queue
-        w_fids = get_fids(warpcast_queue_file)
-        s_fids = get_fids(searchcaster_queue_file)
-        return list(set(w_fids) - set(s_fids))  # set difference
+        w_fids = set(get_fids(warpcast_queue_file))
+        s_fids = set(get_fids(searchcaster_queue_file))
+        return list(set.difference(w_fids, s_fids))
 
     # TODO: this code still untested
     @staticmethod
-    def user_ensdata() -> List[str]:
-        searchcaster_data_path = "queue/user_searchcaster.ndjson"
-        ensdata_data_path = "queue/user_ensdata.ndjson"
-        searchcaster_addresses = get_addresses(searchcaster_data_path)
-        ensdata_addresses = get_addresses(ensdata_data_path)
-        # NOTE: ensdata doesn't return these addresses
+    def user_ensdata(
+        searchcaster_queue_file: str = "queue/user_searchcaster.ndjson",
+        ensdata_queue_file: str = "queue/user_ensdata.ndjson",
+    ) -> List[str]:
+        #  ensdata.net doesn't return these addresses
         forbidden_addresses = [
             "0x947caf5ada865ace0c8de0ffd55de0c02e5f6b54",
             "0xaee33d473c68f9b4946020d79021416ff0587005",
             "0x2d3fe453caaa7cd2c5475a50b06630dd75f67377",
             "0xc6735e557cb2c5850708cf00a2dec05da2aa6490",
         ]
-        return list(
-            set(searchcaster_addresses) - set(ensdata_addresses + forbidden_addresses)
-        )
+
+        s_addrs = set(get_addresses(searchcaster_queue_file))
+        e_addrs = set(get_addresses(ensdata_queue_file))
+        e_addrs = set.union(e_addrs, set(forbidden_addresses))
+        return list(set.difference(s_addrs, e_addrs))
 
     @staticmethod
     def cast_warpcast(filepath: str = "data/casts.parquet") -> int:
-        # NOTE: once queue is consuming, can't stop and resume
         query = f"SELECT MAX(timestamp) FROM read_parquet('{filepath}')"
         try:
             time: List[int] = execute_query(query)  # a list of one element
             return time[0] if time else 0
         except Exception as e:
             print(f"Error: {e}")
-            return 0  # no item, means get all casts in network
+            return 0  # get all cast in network if local cast emtpy
 
     # TODO: simplify-able
     @staticmethod
@@ -485,9 +478,8 @@ class QueueProducer:
         query = f"SELECT hash FROM read_parquet('{data_file}') "
         query += f"WHERE timestamp >= {t_from} AND timestamp < {t_until}"
         try:
-            hashes = execute_query(query)
-            hashes = list(set(hashes))
-            return [(hash, None) for hash in hashes]
+            hashes = set(execute_query(query))
+            return list(map(lambda hash: (hash, None), hashes))
         except Exception as e:
             print(f"Error: {e}")
             return []

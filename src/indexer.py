@@ -3,14 +3,12 @@ import functools
 import json
 import os
 import time
-from datetime import datetime
 from typing import Any, List, Optional, Sequence, Tuple, TypedDict
 
 import aiohttp
 import duckdb
 import pandas as pd
 import pydantic
-import pytz
 import requests
 from dotenv import load_dotenv
 
@@ -168,80 +166,35 @@ def get_username_by_fid(fid: int) -> Optional[str]:
     return result[0] if result else None
 
 
-class TimeUtils:
+class TimeConverter:
+    FACTORS = {
+        "minutes": 60 * 1000,
+        "hours": 60 * 60 * 1000,
+        "days": 24 * 60 * 60 * 1000,
+        "weeks": 7 * 24 * 60 * 60 * 1000,
+        "months": 30 * 24 * 60 * 60 * 1000,
+        "years": 365 * 24 * 60 * 60 * 1000,
+    }
+
     @staticmethod
     def ms_now() -> int:
         return int(round(time.time() * 1000))
 
     @staticmethod
-    def minutes_to_ms(minutes: int) -> int:
-        return minutes * 60 * 1000
+    def to_ms(factor: str, units: int) -> int:
+        return units * TimeConverter.FACTORS[factor]
 
     @staticmethod
-    def hours_to_ms(hours: int) -> int:
-        return hours * 60 * 60 * 1000
+    def from_ms(factor: str, ms: int) -> float:
+        return ms / TimeConverter.FACTORS[factor]
 
     @staticmethod
-    def days_to_ms(days: int) -> int:
-        return days * 24 * 60 * 60 * 1000
+    def ago_to_unixms(factor: str, units: int) -> int:
+        return TimeConverter.ms_now() - TimeConverter.to_ms(factor, units)
 
     @staticmethod
-    def weeks_to_ms(weeks: int) -> int:
-        return weeks * 7 * 24 * 60 * 60 * 1000
-
-    @staticmethod
-    def ms_to_minutes(ms: int) -> float:
-        return ms / (60 * 1000)
-
-    @staticmethod
-    def ms_to_hours(ms: int) -> float:
-        return ms / (60 * 60 * 1000)
-
-    @staticmethod
-    def ms_to_days(ms: int) -> float:
-        return ms / (24 * 60 * 60 * 1000)
-
-    @staticmethod
-    def ms_to_weeks(ms: int) -> float:
-        return ms / (7 * 24 * 60 * 60 * 1000)
-
-    @staticmethod
-    def minutes_ago_to_unixms(minutes: int) -> int:
-        return TimeUtils.ms_now() - TimeUtils.minutes_to_ms(minutes)
-
-    @staticmethod
-    def hours_ago_to_unixms(hours: int) -> int:
-        return TimeUtils.ms_now() - TimeUtils.hours_to_ms(hours)
-
-    @staticmethod
-    def days_ago_to_unixms(days: int) -> int:
-        return TimeUtils.ms_now() - TimeUtils.days_to_ms(days)
-
-    @staticmethod
-    def weeks_ago_to_unixms(weeks: int) -> int:
-        return TimeUtils.ms_now() - TimeUtils.weeks_to_ms(weeks)
-
-    @staticmethod
-    def unixms_to_minutes_ago(ms: int) -> float:
-        return TimeUtils.ms_to_minutes(TimeUtils.ms_now() - ms)
-
-    @staticmethod
-    def unixms_to_hours_ago(ms: int) -> float:
-        return TimeUtils.ms_to_hours(TimeUtils.ms_now() - ms)
-
-    @staticmethod
-    def unixms_to_days_ago(ms: int) -> float:
-        return TimeUtils.ms_to_days(TimeUtils.ms_now() - ms)
-
-    @staticmethod
-    def unixms_to_weeks_ago(ms: int) -> float:
-        return TimeUtils.ms_to_weeks(TimeUtils.ms_now() - ms)
-
-    @staticmethod
-    def ymd_to_unixms(year: int, month: int, day: int = 1) -> int:
-        dt = datetime(year, month, day, tzinfo=pytz.UTC)
-        timestamp = dt.timestamp()
-        return int(timestamp * 1000)
+    def unixms_to_time_ago(factor: str, ms: int) -> float:
+        return TimeConverter.from_ms(factor, TimeConverter.ms_now() - ms)
 
 
 def is_valid_ethereum_address(address: str) -> bool:
@@ -537,8 +490,8 @@ class QueueProducer:
     # TODO: simplify-able
     @staticmethod
     def reaction_warpcast(
-        t_from: int = TimeUtils.days_ago_to_unixms(32),  # more than 1 month
-        t_until: int = TimeUtils.ms_now(),
+        t_from: int = TimeConverter.ago_to_unixms(factor="days", units=1),
+        t_until: int = TimeConverter.ms_now(),
         data_file: str = "data/casts.parquet",
     ) -> List[Tuple[str, Optional[str]]]:
         query = f"SELECT hash FROM read_parquet('{data_file}') "
@@ -610,9 +563,10 @@ class QueueConsumer:
             cursor = result["next_cursor"]
             json_append("queue/cast_warpcast.ndjson", casts)
             timestamp_diff = new_timestamp - max_timestamp
-            print(
-                f"cast_warpcast: {TimeUtils.ms_to_days(timestamp_diff):.2f} days left"
+            timestamp_diff_str = TimeConverter.from_ms(
+                factor="days", ms=timestamp_diff
             )
+            print(f"cast_warpcast: {timestamp_diff_str} days left")
             time.sleep(0.5)
             if cursor is None:
                 break

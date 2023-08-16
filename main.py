@@ -20,12 +20,13 @@ async def refresh_user() -> None:
         os.remove(quwf)
         os.remove(uf)
 
-    print("Fetching from Warpcast")
-    await indexer.QueueConsumer.user_warpcast(1000)
-    print("Fetching from Searchcaster")
-    await indexer.QueueConsumer.user_searchcaster(125)
-    print("Fetching from Ensdata")
-    await indexer.QueueConsumer.user_ensdata(50)
+    # TODO: queue consumer now has different params
+    # print("Fetching from Warpcast")
+    # await indexer.QueueConsumer.user_warpcast(1000)
+    # print("Fetching from Searchcaster")
+    # await indexer.QueueConsumer.user_searchcaster(125)
+    # print("Fetching from Ensdata")
+    # await indexer.QueueConsumer.user_ensdata(50)
 
     df = indexer.Merger.user(quwf, qusf, uf)
     df.to_parquet(uf, index=False)

@@ -477,88 +477,86 @@ class QueueProducer:
     ) -> List[Tuple[str, Optional[str]]]:
         query = f"SELECT hash FROM read_parquet('{data_file}') "
         query += f"WHERE timestamp >= {t_from} AND timestamp < {t_until}"
-        try:
-            hashes = set(execute_query(query))
-            return list(map(lambda hash: (hash, None), hashes))
-        except Exception as e:
-            print(f"Error: {e}")
-            return []
+        hashes = set(execute_query(query))
+        return list(map(lambda hash: (hash, None), hashes))
 
 
 # TODO: untested code
 class QueueConsumer:
     @staticmethod
-    # type: ignore
-    async def user_queue_consumer(
-        urls: List[str],
-        fetcher_fn,
-        n: int = 100,
+    async def user_warpcast(
+        fids: List[int], n: int = 1000, out: str = "queue/user_warpcast.ndjson"
     ) -> None:
-        while urls:
-            fn_name = fetcher_fn.__name__
-            current_batch = urls[:n]
-            urls = urls[n:]
-            print(f"{fn_name}: {len(urls)} left; fetching: {n}")
-            data = await fetcher_fn(current_batch)
-            json_append(f"queue/{fn_name}.ndjson", list(filter(None, data["users"])))
+        for i in range(0, len(fids), n):
+            batch = fids[i : i + n]
+            urls = [UrlMaker.user_warpcast(fid=fid) for fid in batch]
+            print(f"user_warpcast: {len(fids) - i - n} left; fetching: {n}")
+            data = await Fetcher.user_warpcast(urls)
+            json_append(out, data["users"])
             await asyncio.sleep(0.5)
 
-    user_warpcast = functools.partial(
-        user_queue_consumer,
-        [UrlMaker.user_warpcast(fid=fid) for fid in QueueProducer.user_warpcast()],
-        Fetcher.user_warpcast,
-    )
-
-    user_searchcaster = functools.partial(
-        user_queue_consumer,
-        [
-            UrlMaker.user_searchcaster(fid=fid)
-            for fid in QueueProducer.user_searchcaster()
-        ],
-        Fetcher.user_searchcaster,
-    )
-
-    user_ensdata = functools.partial(
-        user_queue_consumer,
-        [UrlMaker.user_ensdata(addr) for addr in QueueProducer.user_ensdata()],
-        Fetcher.user_ensdata,
-    )
+    @staticmethod
+    async def user_searchcaster(
+        fids: List[int], n: int = 125, out: str = "queue/user_searchcaster.ndjson"
+    ) -> None:
+        for i in range(0, len(fids), n):
+            batch = fids[i : i + n]
+            urls = [UrlMaker.user_searchcaster(fid=fid) for fid in batch]
+            print(f"user_searchcaster: {len(fids) - i - n} left; fetching: {n}")
+            data = await Fetcher.user_searchcaster(urls)
+            json_append(out, data["users"])
+            await asyncio.sleep(0.5)
 
     @staticmethod
-    async def cast_warpcast(cursor: Optional[str] = None) -> None:
-        def calculate_timestamp_diff(new: int, max: int) -> float:
-            return TimeConverter.from_ms(factor="days", ms=new - max)
+    async def user_ensdata(
+        addrs: List[str], n: int = 50, out: str = "queue/user_ensdata.ndjson"
+    ) -> None:
+        for i in range(0, len(addrs), n):
+            batch = addrs[i : i + n]
+            urls = [UrlMaker.user_ensdata(addr=addr) for addr in batch]
+            print(f"user_ensdata: {len(addrs) - i - n} left; fetching: {n}")
+            data = await Fetcher.user_ensdata(urls)
+            json_append(out, data["users"])
+            await asyncio.sleep(0.5)
 
-        max_timestamp = QueueProducer.cast_warpcast()
-        new_timestamp = max_timestamp + 1
-        while new_timestamp > max_timestamp:
-            url = UrlMaker.cast_warpcast(limit=1000, cursor=cursor)
-            print(f"cast_warpcast: fetching {url}")
+    @staticmethod
+    async def cast_warpcast(
+        cursor: Optional[str] = None,
+        n: int = 1000,
+        out: str = "queue/cast_warpcast.ndjson",
+    ) -> None:
+        local_t = QueueProducer.cast_warpcast()
+        new_t = local_t + 1
+        while new_t > local_t:
+            url = UrlMaker.cast_warpcast(limit=n, cursor=cursor)
             result = await Fetcher.cast_warpcast(url)
             cursor = result["next_cursor"]
-            new_timestamp = result["casts"][-1].timestamp
-            json_append("queue/cast_warpcast.ndjson", result["casts"])
-            print(f"{calculate_timestamp_diff(new_timestamp, max_timestamp)} days left")
+            new_t = result["casts"][-1].timestamp
+            days_left = TimeConverter.from_ms(factor="days", ms=new_t - local_t)
+            print(f"cast_warpcast: fetching {url}; {days_left} days left")
+            json_append(out, result["casts"])
+            await asyncio.sleep(0.5)
             if cursor is None:
                 break
-            await asyncio.sleep(0.5)
 
     @staticmethod
-    async def reaction_warpcast(n: int = 1000) -> None:
-        queue = QueueProducer.reaction_warpcast()
-        while queue:
-            batch = queue[:n]
-            queue = queue[n:]
-            print(f"reaction_warpcast: {len(queue)} left; fetching: {n}")
-            urls = [
-                UrlMaker.reaction_warpcast(hash=item[0], cursor=item[1])
-                for item in batch
-            ]
+    async def reaction_warpcast(
+        reactions: List[Tuple[str, Optional[str]]],
+        n: int = 1000,
+        out: str = "queue/reaction_warpcast.ndjson",
+    ) -> None:
+        def _make_url(hash: str, cursor: Optional[str]) -> str:
+            return UrlMaker.reaction_warpcast(castHash=hash, cursor=cursor)
+
+        while reactions:
+            batch = reactions[:n]
+            urls = [_make_url(item[0], item[1]) for item in batch]
+            print(f"reaction_warpcast: {len(reactions) - n} left; fetching: {n}")
             data = await Fetcher.reaction_warpcast(urls)
             for cast in data:
-                json_append("queue/reaction_warpcast.ndjson", cast["reactions"])
+                json_append(out, cast["reactions"])
                 if cast["next_cursor"]:
-                    queue.append((cast["target_hash"], cast["next_cursor"]))
+                    reactions.append((cast["target_hash"], cast["next_cursor"]))
             await asyncio.sleep(1)
 
 

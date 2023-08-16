@@ -54,12 +54,12 @@ async def test_user_integration() -> None:
 
     async def fetch_fids(fids: List[int]) -> None:
         w_urls = [indexer.UrlMaker.user_warpcast(fid=fid) for fid in fids]
-        w_u = await indexer.Fetcher.user_warpcast(w_urls)
-        indexer.json_append("testdata/user_warpcast.ndjson", w_u)
+        w_data = await indexer.Fetcher.user_warpcast(w_urls)
+        indexer.json_append("testdata/user_warpcast.ndjson", w_data["users"])
 
         s_urls = [indexer.UrlMaker.user_searchcaster(fid=fid) for fid in fids]
-        s_u = await indexer.Fetcher.user_searchcaster(s_urls)
-        indexer.json_append("testdata/user_searchcaster.ndjson", s_u)
+        s_data = await indexer.Fetcher.user_searchcaster(s_urls)
+        indexer.json_append("testdata/user_searchcaster.ndjson", s_data["users"])
 
     warpcast_file = "testdata/user_warpcast.ndjson"
     searchcaster_file = "testdata/user_searchcaster.ndjson"
@@ -152,6 +152,7 @@ async def test_cast_reaction_integration() -> None:
     # TODO: maybe more asserts here
 
 
+# TODO: flaky lol
 def test_queue_producer() -> None:
     """
     What's tested:
@@ -215,11 +216,11 @@ def test_queue_producer() -> None:
 
     c_file = "testdata/casts.parquet"
 
-    c_queued_max_timestamp_1 = indexer.QueueProducer.cast_warpcast(c_file)
-    assert c_queued_max_timestamp_1 == 0
-
     c_df = pd.DataFrame(c_dummy_casts)
     c_df.to_parquet(c_file)
+
+    c_queued_max_timestamp_1 = indexer.QueueProducer.cast_warpcast(c_file)
+    assert c_queued_max_timestamp_1 == 0
 
     c_queued_max_timestamp_2 = indexer.QueueProducer.cast_warpcast(c_file)
     assert c_queued_max_timestamp_2 == c_one_week_ago

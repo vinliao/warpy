@@ -1,6 +1,7 @@
 import glob
 import os
 import random
+import string
 import time
 from typing import Any, Dict, Generator, Hashable
 
@@ -34,65 +35,6 @@ def stringify_keys(d: Dict[Hashable, Any]) -> Dict[str, Any]:
 # ======================================================================================
 # integration tests
 # ======================================================================================
-
-
-# @pytest.mark.asyncio
-# async def test_user_integration() -> None:
-#     """
-#     What's tested:
-#     - both user fetcher fetches and extracts properly (returns pydantic model)
-#     - merger merges properly (warpcast+searchcaster and parquet+ndjson)
-#     """
-
-#     def r_ints(n: int) -> List[int]:
-#         return [random.randint(1, 10000) for i in range(n)]
-
-#     def make_fids(df1: pd.DataFrame, df2: pd.DataFrame) -> List[int]:
-#         return list(set(df1["fid"].tolist() + df2["fid"].tolist()))
-
-#     async def fetch_fids(fids: List[int]) -> None:
-#         w_urls = [indexer.UrlMaker.user_warpcast(fid=fid) for fid in fids]
-#         w_data = await indexer.Fetcher.user_warpcast(w_urls)
-#         indexer.json_append("testdata/user_warpcast.ndjson", w_data["users"])
-
-#         s_urls = [indexer.UrlMaker.user_searchcaster(fid=fid) for fid in fids]
-#         s_data = await indexer.Fetcher.user_searchcaster(s_urls)
-#         indexer.json_append("testdata/user_searchcaster.ndjson", s_data["users"])
-
-#     warpcast_file = "testdata/user_warpcast.ndjson"
-#     searchcaster_file = "testdata/user_searchcaster.ndjson"
-#     user_file = "testdata/users.parquet"
-
-#     # Test merge warpcast with searchcaster (first batch)
-#     await fetch_fids(r_ints(10) + [3])  # add dwr for "complete profile"
-#     w_df_1 = indexer.read_ndjson(warpcast_file)
-#     s_df_1 = indexer.read_ndjson(searchcaster_file)
-#     fids_1 = make_fids(w_df_1, s_df_1)
-#     df_1 = indexer.Merger.user(warpcast_file, searchcaster_file, user_file)
-#     assert isinstance(w_df_1, pd.DataFrame)
-#     assert isinstance(s_df_1, pd.DataFrame)
-#     assert isinstance(df_1, pd.DataFrame)
-#     assert len(df_1) == len(w_df_1) == len(s_df_1)
-#     assert set(df_1["fid"]).issubset(set(fids_1))
-#     assert len(df_1.columns) == len(w_df_1.columns) + len(s_df_1.columns) - 1
-
-#     # Test merge local parquet with incoming data (second batch)
-#     os.remove(warpcast_file)
-#     os.remove(searchcaster_file)
-#     df_1.to_parquet(user_file)
-#     await fetch_fids(r_ints(5))
-#     w_df_2 = indexer.read_ndjson(warpcast_file)
-#     s_df_2 = indexer.read_ndjson(searchcaster_file)
-#     fids_2 = make_fids(w_df_2, s_df_2)
-#     assert isinstance(w_df_2, pd.DataFrame)
-#     assert isinstance(s_df_2, pd.DataFrame)
-#     assert len(w_df_2) == len(s_df_2)
-
-#     new_df = indexer.Merger.user(warpcast_file, searchcaster_file, user_file)
-#     assert sorted(new_df["fid"].tolist()) == sorted(fids_1 + fids_2)
-#     users_2 = [indexer.User(**stringify_keys(x)) for x in new_df.to_dict("records")]
-#     assert all(isinstance(user, indexer.User) for user in users_2)
-
 
 # @pytest.mark.asyncio
 # async def test_cast_reaction_integration() -> None:
@@ -226,46 +168,24 @@ async def test_cast_reaction_integration() -> None:
     pass
 
     # ==================================================================================
-    # cast and reactions
+    # cast queue producer
     # ==================================================================================
 
-    # def random_hash(n: int) -> str:
-    #     return "".join(random.choices(string.ascii_letters + string.digits, k=n))
+    c_data_file = "testdata/casts.parquet"
 
-    # c_one_week_ago = indexer.TimeConverter.ago_to_unixms(factor="weeks", units=1)
-    # c_expected_hash_1 = random_hash(6)
-    # c_expected_hash_2 = random_hash(6)
-    # c_dummy_casts = [
-    #     {"hash": c_expected_hash_1, "timestamp": c_one_week_ago},
-    #     {
-    #         "hash": c_expected_hash_2,
-    #         "timestamp": indexer.TimeConverter.ago_to_unixms(factor="weeks", units=2),
-    #     },
-    #     {
-    #         "hash": random_hash(6),
-    #         "timestamp": indexer.TimeConverter.ago_to_unixms(factor="weeks", units=3),
-    #     },
-    #     {
-    #         "hash": random_hash(6),
-    #         "timestamp": indexer.TimeConverter.ago_to_unixms(factor="weeks", units=4),
-    #     },
-    # ]
+    def random_hash(n: int) -> str:
+        return "".join(random.choices(string.ascii_letters + string.digits, k=n))
 
-    # c_df = pd.DataFrame(c_dummy_casts)
-    # c_df.to_parquet(c_file)
+    def make_dummy_cast() -> Dict[str, Any]:
+        d = random.randint(1, 100)
+        t = indexer.TimeConverter.ago_to_unixms(factor="days", units=d)
+        return {"hash": random_hash(6), "timestamp": t}
 
-    # c_queued_max_timestamp_1 = indexer.QueueProducer.cast_warpcast(c_file)
-    # assert c_queued_max_timestamp_1 == 0
-
-    # c_queued_max_timestamp_2 = indexer.QueueProducer.cast_warpcast(c_file)
-    # assert c_queued_max_timestamp_2 == c_one_week_ago
-
-    # r_one_day_t = indexer.TimeConverter.to_ms(factor="days", units=1)
-    # r_t = indexer.TimeConverter.ago_to_unixms(factor="weeks", units=2) - r_one_day_t
-    # r_queue_producer = indexer.QueueProducer.reaction_warpcast
-    # r_queued_hashes = r_queue_producer(t_from=r_t, data_file=c_file)
-    # r_expected_hashes_tuple = [(c_expected_hash_1, None), (c_expected_hash_2, None)]
-    # assert set(r_queued_hashes) == set(r_expected_hashes_tuple)
+    assert indexer.QueueProducer.cast_warpcast(c_data_file) == 0
+    c_df = pd.DataFrame([make_dummy_cast() for _ in range(10)])
+    c_df.to_parquet(c_data_file, index=False)
+    c_max_t = c_df["timestamp"].max()
+    assert indexer.QueueProducer.cast_warpcast(c_data_file) == c_max_t
 
 
 # ======================================================================================

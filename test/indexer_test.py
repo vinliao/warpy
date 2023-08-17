@@ -187,7 +187,7 @@ async def test_queue_producer() -> None:
 
     os.remove(u_wf)
     os.remove(u_sf)
-    u_batch_fids = u_fids[:10] + [3] # add dwr for non-emtpy address field
+    u_batch_fids = u_fids[:10] + [3]  # add dwr for non-emtpy address field
     await indexer.BatchFetcher.user_warpcast(fids=u_batch_fids, n=3, out=u_wf)
     await indexer.BatchFetcher.user_searchcaster(fids=u_batch_fids, n=3, out=u_sf)
     u_addrs = indexer.get_addresses(u_sf)
@@ -195,14 +195,13 @@ async def test_queue_producer() -> None:
     u_w_df = indexer.read_ndjson(u_wf)
     u_s_df = indexer.read_ndjson(u_sf)
     u_e_df = indexer.read_ndjson(u_ef)
-    assert abs(len(u_w_df) - len(u_s_df)) <= 2, f"Length mismatch: u_w_df={len(u_w_df)}, u_s_df={len(u_s_df)}"
-    u_s_with_address = u_s_df[u_s_df['address'].notna()]
-    assert abs(len(u_s_with_address) - len(u_e_df)) <= 2, f"Length mismatch: u_s_with_address={len(u_s_with_address)}, u_e_df={len(u_e_df)}"
+    assert abs(len(u_w_df) - len(u_s_df)) <= 2  # 2 item fetch error tolerance
+    u_s_with_address = u_s_df[u_s_df["address"].notna()]
+    assert abs(len(u_s_with_address) - len(u_e_df)) <= 2  # 2 item fetch error tolerance
 
-
-    # # ==================================================================================
-    # # cast and reactions
-    # # ==================================================================================
+    # ==================================================================================
+    # cast and reactions
+    # ==================================================================================
 
     # def random_hash(n: int) -> str:
     #     return "".join(random.choices(string.ascii_letters + string.digits, k=n))
@@ -249,76 +248,35 @@ async def test_queue_producer() -> None:
 # unit tests
 # ======================================================================================
 
+
 def test_time_converter() -> None:
-    def test_ms_now() -> None:
-        # Test that ms_now is returning the current time in milliseconds
-        assert abs(indexer.TimeConverter.ms_now() - int(round(time.time() * 1000))) < 10
+    assert abs(indexer.TimeConverter.ms_now() - int(round(time.time() * 1000))) < 10
 
+    # Test the conversion to milliseconds for all factors
+    assert indexer.TimeConverter.to_ms("minutes", 1) == 60 * 1000
+    assert indexer.TimeConverter.to_ms("hours", 2) == 2 * 60 * 60 * 1000
+    assert indexer.TimeConverter.to_ms("days", 1) == 24 * 60 * 60 * 1000
+    assert indexer.TimeConverter.to_ms("weeks", 1) == 7 * 24 * 60 * 60 * 1000
+    assert indexer.TimeConverter.to_ms("months", 1) == 30 * 24 * 60 * 60 * 1000
+    assert indexer.TimeConverter.to_ms("years", 1) == 365 * 24 * 60 * 60 * 1000
 
-    @pytest.mark.parametrize(
-        "factor, units, expected_ms",
-        [
-            ("minutes", 1, 60 * 1000),
-            ("hours", 2, 2 * 60 * 60 * 1000),
-            ("days", 1, 24 * 60 * 60 * 1000),
-            ("weeks", 1, 7 * 24 * 60 * 60 * 1000),
-            ("months", 1, 30 * 24 * 60 * 60 * 1000),
-            ("years", 1, 365 * 24 * 60 * 60 * 1000),
-        ],
-    )
-    def test_to_ms(factor: str, units: int, expected_ms: int) -> None:
-        # Test the conversion to milliseconds for all factors
-        assert indexer.TimeConverter.to_ms(factor, units) == expected_ms
+    # Test the conversion from milliseconds for all factors
+    assert indexer.TimeConverter.from_ms("minutes", 60 * 1000) == 1
+    assert indexer.TimeConverter.from_ms("hours", 2 * 60 * 60 * 1000) == 2
+    assert indexer.TimeConverter.from_ms("days", 24 * 60 * 60 * 1000) == 1
+    assert indexer.TimeConverter.from_ms("weeks", 7 * 24 * 60 * 60 * 1000) == 1
+    assert indexer.TimeConverter.from_ms("months", 30 * 24 * 60 * 60 * 1000) == 1
+    assert indexer.TimeConverter.from_ms("years", 365 * 24 * 60 * 60 * 1000) == 1
 
-
-    @pytest.mark.parametrize(
-        "factor, ms, expected_units",
-        [
-            ("minutes", 60 * 1000, 1),
-            ("hours", 2 * 60 * 60 * 1000, 2),
-            ("days", 24 * 60 * 60 * 1000, 1),
-            ("weeks", 7 * 24 * 60 * 60 * 1000, 1),
-            ("months", 30 * 24 * 60 * 60 * 1000, 1),
-            ("years", 365 * 24 * 60 * 60 * 1000, 1),
-        ],
-    )
-    def test_from_ms(factor: str, ms: int, expected_units: int) -> None:
-        # Test the conversion from milliseconds for all factors
-        assert indexer.TimeConverter.from_ms(factor, ms) == expected_units
-
-
-    @pytest.mark.parametrize(
-        "factor, units",
-        [
-            ("minutes", 1),
-            ("hours", 1),
-            ("days", 1),
-            ("weeks", 1),
-            ("months", 1),
-            ("years", 1),
-        ],
-    )
-    def test_ago_to_unixms(factor: str, units: int) -> None:
-        # Test the conversion of time ago to UNIX milliseconds for all factors
-        ms_ago = indexer.TimeConverter.ago_to_unixms(factor, units)
+    # Test the conversion of time ago to UNIX milliseconds for all factors
+    factors = ["minutes", "hours", "days", "weeks", "months", "years"]
+    for factor in factors:
+        ms_ago = indexer.TimeConverter.ago_to_unixms(factor, 1)
         now = indexer.TimeConverter.ms_now()
-        ms = indexer.TimeConverter.to_ms(factor, units)
+        ms = indexer.TimeConverter.to_ms(factor, 1)
         assert abs(ms_ago - (now - ms)) < 10
 
-
-    @pytest.mark.parametrize(
-        "factor, units",
-        [
-            ("minutes", 1),
-            ("hours", 1),
-            ("days", 1),
-            ("weeks", 1),
-            ("months", 1),
-            ("years", 1),
-        ],
-    )
-    def test_unixms_to_ago(factor: str, units: int) -> None:
-        # Test the conversion of UNIX milliseconds to time ago for all factors
-        ms = indexer.TimeConverter.ms_now() - indexer.TimeConverter.to_ms(factor, units)
-        assert abs(indexer.TimeConverter.unixms_to_ago(factor, ms) - units) < 0.01
-    
+    # Test the conversion of UNIX milliseconds to time ago for all factors
+    for factor in factors:
+        ms = indexer.TimeConverter.ms_now() - indexer.TimeConverter.to_ms(factor, 1)
+        assert abs(indexer.TimeConverter.unixms_to_ago(factor, ms) - 1) < 0.01

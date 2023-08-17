@@ -3,6 +3,7 @@ import os
 import sys
 
 import src.indexer as indexer
+import src.pipes as pipes
 
 # ======================================================================================
 # refresher

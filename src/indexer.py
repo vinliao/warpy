@@ -4,6 +4,7 @@ import json
 import os
 import time
 from typing import Any, List, Optional, Tuple, TypedDict, Union
+from datetime import datetime
 
 import aiohttp
 import duckdb
@@ -206,6 +207,14 @@ class TimeConverter:
     @staticmethod
     def unixms_to_ago(factor: str, ms: int) -> float:
         return TimeConverter.from_ms(factor, TimeConverter.ms_now() - ms)
+    
+    @staticmethod
+    def ymd_to_unixms(year: int, month: int, day: int) -> int:
+        return int(time.mktime((year, month, day, 0, 0, 0, 0, 0, 0)) * 1000)
+    
+    @staticmethod
+    def datetime_to_unixms(dt: datetime) -> int:
+        return int(time.mktime(dt.timetuple()) * 1000)
 
 
 def is_valid_ethereum_address(address: str) -> bool:

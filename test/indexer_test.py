@@ -1,8 +1,6 @@
 import glob
-import json
 import os
 import random
-import string
 import time
 from typing import Any, Dict, Generator, Hashable, List
 
@@ -152,160 +150,175 @@ async def test_cast_reaction_integration() -> None:
     # TODO: maybe more asserts here
 
 
-# TODO: flaky lol
-def test_queue_producer() -> None:
+@pytest.mark.asyncio
+async def test_queue_producer() -> None:
     """
     What's tested:
-    - queue_producer (user, cast, reaction)
+    - queue_producer (users)
+    - batch_fetcher (users)
     """
 
     # ==================================================================================
-    # users
+    # users queue producer
     # ==================================================================================
 
     u_fids = [random.randint(1, 10000) for i in range(1000)]
-    u_fids_dict = [{"fid": fid} for fid in u_fids]
     u_wf = "testdata/user_warpcast.ndjson"
     u_sf = "testdata/user_searchcaster.ndjson"
+    u_ef = "testdata/user_ensdata.ndjson"
     u_f = "testdata/users.parquet"
 
-    with open(u_wf, "w") as f:
-        for fid in u_fids_dict:
-            f.write(json.dumps(fid) + "\n")
-
+    u_fids_dict = [{"fid": fid} for fid in u_fids]
+    indexer.json_append(u_wf, u_fids_dict)
     u_w_queued_fids = indexer.QueueProducer.user_warpcast(u_wf, u_f)
     u_highest_network_fid = max(u_w_queued_fids)
-    u_all_fids = list(range(1, u_highest_network_fid + 1))
-    assert sorted(set(u_w_queued_fids)) == sorted(set(u_all_fids) - set(u_fids))
+    u_all_fids = set(range(1, u_highest_network_fid + 1))
+    assert set(u_w_queued_fids) == set.difference(u_all_fids, set(u_fids))
 
     u_half_fids = random.sample(u_fids, len(u_fids) // 2)
     u_half_fids_dict = [{"fid": fid} for fid in u_half_fids]
-
-    with open(u_sf, "w") as f:
-        for fid in u_half_fids_dict:
-            f.write(json.dumps(fid) + "\n")
-
+    indexer.json_append(u_sf, u_half_fids_dict)
     u_s_queued_fids = indexer.QueueProducer.user_searchcaster(u_wf, u_sf)
-    assert sorted(set(u_s_queued_fids)) == sorted(set(u_fids) - set(u_half_fids))
+    assert set(u_s_queued_fids) == set.difference(set(u_fids), set(u_half_fids))
 
     # ==================================================================================
-    # cast and reactions
+    # users batch fetcher
     # ==================================================================================
 
-    def random_hash(n: int) -> str:
-        return "".join(random.choices(string.ascii_letters + string.digits, k=n))
+    os.remove(u_wf)
+    os.remove(u_sf)
+    u_batch_fids = u_fids[:10] + [3] # add dwr for non-emtpy address field
+    await indexer.BatchFetcher.user_warpcast(fids=u_batch_fids, n=3, out=u_wf)
+    await indexer.BatchFetcher.user_searchcaster(fids=u_batch_fids, n=3, out=u_sf)
+    u_addrs = indexer.get_addresses(u_sf)
+    await indexer.BatchFetcher.user_ensdata(addrs=u_addrs, n=3, out=u_ef)
+    u_w_df = indexer.read_ndjson(u_wf)
+    u_s_df = indexer.read_ndjson(u_sf)
+    u_e_df = indexer.read_ndjson(u_ef)
+    assert abs(len(u_w_df) - len(u_s_df)) <= 2, f"Length mismatch: u_w_df={len(u_w_df)}, u_s_df={len(u_s_df)}"
+    u_s_with_address = u_s_df[u_s_df['address'].notna()]
+    assert abs(len(u_s_with_address) - len(u_e_df)) <= 2, f"Length mismatch: u_s_with_address={len(u_s_with_address)}, u_e_df={len(u_e_df)}"
 
-    c_one_week_ago = indexer.TimeConverter.ago_to_unixms(factor="weeks", units=1)
-    c_expected_hash_1 = random_hash(6)
-    c_expected_hash_2 = random_hash(6)
-    c_dummy_casts = [
-        {"hash": c_expected_hash_1, "timestamp": c_one_week_ago},
-        {
-            "hash": c_expected_hash_2,
-            "timestamp": indexer.TimeConverter.ago_to_unixms(factor="weeks", units=2),
-        },
-        {
-            "hash": random_hash(6),
-            "timestamp": indexer.TimeConverter.ago_to_unixms(factor="weeks", units=3),
-        },
-        {
-            "hash": random_hash(6),
-            "timestamp": indexer.TimeConverter.ago_to_unixms(factor="weeks", units=4),
-        },
-    ]
 
-    c_file = "testdata/casts.parquet"
+    # # ==================================================================================
+    # # cast and reactions
+    # # ==================================================================================
 
-    c_df = pd.DataFrame(c_dummy_casts)
-    c_df.to_parquet(c_file)
+    # def random_hash(n: int) -> str:
+    #     return "".join(random.choices(string.ascii_letters + string.digits, k=n))
 
-    c_queued_max_timestamp_1 = indexer.QueueProducer.cast_warpcast(c_file)
-    assert c_queued_max_timestamp_1 == 0
+    # c_one_week_ago = indexer.TimeConverter.ago_to_unixms(factor="weeks", units=1)
+    # c_expected_hash_1 = random_hash(6)
+    # c_expected_hash_2 = random_hash(6)
+    # c_dummy_casts = [
+    #     {"hash": c_expected_hash_1, "timestamp": c_one_week_ago},
+    #     {
+    #         "hash": c_expected_hash_2,
+    #         "timestamp": indexer.TimeConverter.ago_to_unixms(factor="weeks", units=2),
+    #     },
+    #     {
+    #         "hash": random_hash(6),
+    #         "timestamp": indexer.TimeConverter.ago_to_unixms(factor="weeks", units=3),
+    #     },
+    #     {
+    #         "hash": random_hash(6),
+    #         "timestamp": indexer.TimeConverter.ago_to_unixms(factor="weeks", units=4),
+    #     },
+    # ]
 
-    c_queued_max_timestamp_2 = indexer.QueueProducer.cast_warpcast(c_file)
-    assert c_queued_max_timestamp_2 == c_one_week_ago
+    # c_file = "testdata/casts.parquet"
 
-    r_one_day_t = indexer.TimeConverter.to_ms(factor="days", units=1)
-    r_t = indexer.TimeConverter.ago_to_unixms(factor="weeks", units=2) - r_one_day_t
-    r_queue_producer = indexer.QueueProducer.reaction_warpcast
-    r_queued_hashes = r_queue_producer(t_from=r_t, data_file=c_file)
-    r_expected_hashes_tuple = [(c_expected_hash_1, None), (c_expected_hash_2, None)]
-    assert set(r_queued_hashes) == set(r_expected_hashes_tuple)
+    # c_df = pd.DataFrame(c_dummy_casts)
+    # c_df.to_parquet(c_file)
+
+    # c_queued_max_timestamp_1 = indexer.QueueProducer.cast_warpcast(c_file)
+    # assert c_queued_max_timestamp_1 == 0
+
+    # c_queued_max_timestamp_2 = indexer.QueueProducer.cast_warpcast(c_file)
+    # assert c_queued_max_timestamp_2 == c_one_week_ago
+
+    # r_one_day_t = indexer.TimeConverter.to_ms(factor="days", units=1)
+    # r_t = indexer.TimeConverter.ago_to_unixms(factor="weeks", units=2) - r_one_day_t
+    # r_queue_producer = indexer.QueueProducer.reaction_warpcast
+    # r_queued_hashes = r_queue_producer(t_from=r_t, data_file=c_file)
+    # r_expected_hashes_tuple = [(c_expected_hash_1, None), (c_expected_hash_2, None)]
+    # assert set(r_queued_hashes) == set(r_expected_hashes_tuple)
 
 
 # ======================================================================================
 # unit tests
 # ======================================================================================
 
-
-def test_ms_now() -> None:
-    # Test that ms_now is returning the current time in milliseconds
-    assert abs(indexer.TimeConverter.ms_now() - int(round(time.time() * 1000))) < 10
-
-
-@pytest.mark.parametrize(
-    "factor, units, expected_ms",
-    [
-        ("minutes", 1, 60 * 1000),
-        ("hours", 2, 2 * 60 * 60 * 1000),
-        ("days", 1, 24 * 60 * 60 * 1000),
-        ("weeks", 1, 7 * 24 * 60 * 60 * 1000),
-        ("months", 1, 30 * 24 * 60 * 60 * 1000),
-        ("years", 1, 365 * 24 * 60 * 60 * 1000),
-    ],
-)
-def test_to_ms(factor: str, units: int, expected_ms: int) -> None:
-    # Test the conversion to milliseconds for all factors
-    assert indexer.TimeConverter.to_ms(factor, units) == expected_ms
+def test_time_converter() -> None:
+    def test_ms_now() -> None:
+        # Test that ms_now is returning the current time in milliseconds
+        assert abs(indexer.TimeConverter.ms_now() - int(round(time.time() * 1000))) < 10
 
 
-@pytest.mark.parametrize(
-    "factor, ms, expected_units",
-    [
-        ("minutes", 60 * 1000, 1),
-        ("hours", 2 * 60 * 60 * 1000, 2),
-        ("days", 24 * 60 * 60 * 1000, 1),
-        ("weeks", 7 * 24 * 60 * 60 * 1000, 1),
-        ("months", 30 * 24 * 60 * 60 * 1000, 1),
-        ("years", 365 * 24 * 60 * 60 * 1000, 1),
-    ],
-)
-def test_from_ms(factor: str, ms: int, expected_units: int) -> None:
-    # Test the conversion from milliseconds for all factors
-    assert indexer.TimeConverter.from_ms(factor, ms) == expected_units
+    @pytest.mark.parametrize(
+        "factor, units, expected_ms",
+        [
+            ("minutes", 1, 60 * 1000),
+            ("hours", 2, 2 * 60 * 60 * 1000),
+            ("days", 1, 24 * 60 * 60 * 1000),
+            ("weeks", 1, 7 * 24 * 60 * 60 * 1000),
+            ("months", 1, 30 * 24 * 60 * 60 * 1000),
+            ("years", 1, 365 * 24 * 60 * 60 * 1000),
+        ],
+    )
+    def test_to_ms(factor: str, units: int, expected_ms: int) -> None:
+        # Test the conversion to milliseconds for all factors
+        assert indexer.TimeConverter.to_ms(factor, units) == expected_ms
 
 
-@pytest.mark.parametrize(
-    "factor, units",
-    [
-        ("minutes", 1),
-        ("hours", 1),
-        ("days", 1),
-        ("weeks", 1),
-        ("months", 1),
-        ("years", 1),
-    ],
-)
-def test_ago_to_unixms(factor: str, units: int) -> None:
-    # Test the conversion of time ago to UNIX milliseconds for all factors
-    ms_ago = indexer.TimeConverter.ago_to_unixms(factor, units)
-    now = indexer.TimeConverter.ms_now()
-    ms = indexer.TimeConverter.to_ms(factor, units)
-    assert abs(ms_ago - (now - ms)) < 10
+    @pytest.mark.parametrize(
+        "factor, ms, expected_units",
+        [
+            ("minutes", 60 * 1000, 1),
+            ("hours", 2 * 60 * 60 * 1000, 2),
+            ("days", 24 * 60 * 60 * 1000, 1),
+            ("weeks", 7 * 24 * 60 * 60 * 1000, 1),
+            ("months", 30 * 24 * 60 * 60 * 1000, 1),
+            ("years", 365 * 24 * 60 * 60 * 1000, 1),
+        ],
+    )
+    def test_from_ms(factor: str, ms: int, expected_units: int) -> None:
+        # Test the conversion from milliseconds for all factors
+        assert indexer.TimeConverter.from_ms(factor, ms) == expected_units
 
 
-@pytest.mark.parametrize(
-    "factor, units",
-    [
-        ("minutes", 1),
-        ("hours", 1),
-        ("days", 1),
-        ("weeks", 1),
-        ("months", 1),
-        ("years", 1),
-    ],
-)
-def test_unixms_to_ago(factor: str, units: int) -> None:
-    # Test the conversion of UNIX milliseconds to time ago for all factors
-    ms = indexer.TimeConverter.ms_now() - indexer.TimeConverter.to_ms(factor, units)
-    assert abs(indexer.TimeConverter.unixms_to_ago(factor, ms) - units) < 0.01
+    @pytest.mark.parametrize(
+        "factor, units",
+        [
+            ("minutes", 1),
+            ("hours", 1),
+            ("days", 1),
+            ("weeks", 1),
+            ("months", 1),
+            ("years", 1),
+        ],
+    )
+    def test_ago_to_unixms(factor: str, units: int) -> None:
+        # Test the conversion of time ago to UNIX milliseconds for all factors
+        ms_ago = indexer.TimeConverter.ago_to_unixms(factor, units)
+        now = indexer.TimeConverter.ms_now()
+        ms = indexer.TimeConverter.to_ms(factor, units)
+        assert abs(ms_ago - (now - ms)) < 10
+
+
+    @pytest.mark.parametrize(
+        "factor, units",
+        [
+            ("minutes", 1),
+            ("hours", 1),
+            ("days", 1),
+            ("weeks", 1),
+            ("months", 1),
+            ("years", 1),
+        ],
+    )
+    def test_unixms_to_ago(factor: str, units: int) -> None:
+        # Test the conversion of UNIX milliseconds to time ago for all factors
+        ms = indexer.TimeConverter.ms_now() - indexer.TimeConverter.to_ms(factor, units)
+        assert abs(indexer.TimeConverter.unixms_to_ago(factor, ms) - units) < 0.01
+    

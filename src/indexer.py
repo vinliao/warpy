@@ -158,11 +158,8 @@ get_target_hashes = functools.partial(get_property, "target_hash")
 def json_append(file_path: str, data: List[Any]) -> None:
     with open(file_path, "a") as f:
         for item in data:
-            if isinstance(item, pydantic.BaseModel):
-                json_content = item.model_dump()
-            else:
-                json_content = item
-            json.dump(json_content, f)
+            item = item.model_dump() if isinstance(item, pydantic.BaseModel) else item
+            json.dump(item, f)
             f.write("\n")
 
 
@@ -481,8 +478,7 @@ class QueueProducer:
         return list(map(lambda hash: (hash, None), hashes))
 
 
-# TODO: untested code
-class QueueConsumer:
+class BatchFetcher:
     @staticmethod
     async def user_warpcast(
         fids: List[int], n: int = 1000, out: str = "queue/user_warpcast.ndjson"
@@ -513,7 +509,7 @@ class QueueConsumer:
     ) -> None:
         for i in range(0, len(addrs), n):
             batch = addrs[i : i + n]
-            urls = [UrlMaker.user_ensdata(addr=addr) for addr in batch]
+            urls = [UrlMaker.user_ensdata(addr) for addr in batch]
             print(f"user_ensdata: {len(addrs) - i - n} left; fetching: {n}")
             data = await Fetcher.user_ensdata(urls)
             json_append(out, data["users"])

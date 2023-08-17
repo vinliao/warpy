@@ -428,6 +428,7 @@ class QueueProducer:
         queued_file: str = "queue/user_warpcast.ndjson",
         data_file: str = "data/users.parquet",
     ) -> List[int]:
+        # TODO: have a file that saves user without usernames
         local_fids = set.union(*map(set, map(get_fids, [queued_file, data_file])))
         network_fids = set(range(1, fetch_highest_fid() + 1))
         return list(set.difference(network_fids, local_fids))
@@ -437,6 +438,7 @@ class QueueProducer:
         warpcast_queue_file: str = "queue/user_warpcast.ndjson",
         searchcaster_queue_file: str = "queue/user_searchcaster.ndjson",
     ) -> List[int]:
+        # TODO: have a file that saves user without usernames
         w_fids = set(get_fids(warpcast_queue_file))
         s_fids = set(get_fids(searchcaster_queue_file))
         return list(set.difference(w_fids, s_fids))
@@ -481,7 +483,7 @@ class QueueProducer:
 class BatchFetcher:
     @staticmethod
     async def user_warpcast(
-        fids: List[int], n: int = 1000, out: str = "queue/user_warpcast.ndjson"
+        fids: List[int], n: int = 100, out: str = "queue/user_warpcast.ndjson"
     ) -> None:
         for i in range(0, len(fids), n):
             batch = fids[i : i + n]
@@ -557,9 +559,6 @@ class BatchFetcher:
 
 
 class Merger:
-    # NOTE: ideally DataFrame operations should only happen here,
-    # queries should use duckdb+values and set function on PKs
-
     @staticmethod
     def user(
         warpcast_file: str = "queue/user_warpcast.ndjson",
@@ -567,11 +566,11 @@ class Merger:
         user_file: str = "data/users.parquet",
     ) -> pd.DataFrame:
         def make_queued_df(warpcast_file: str, searchcaster_file: str) -> pd.DataFrame:
-            df1 = read_ndjson(warpcast_file)
-            df2 = read_ndjson(searchcaster_file)
-            df1 = df1.drop_duplicates(subset=["fid"])
-            df2 = df2.drop_duplicates(subset=["fid"])
-            return pd.merge(df1, df2, on="fid", how="left")
+            w_df = read_ndjson(warpcast_file)
+            s_df = read_ndjson(searchcaster_file)
+            w_df = w_df.drop_duplicates(subset=["fid"])
+            s_df = s_df.drop_duplicates(subset=["fid"])
+            return pd.merge(w_df, s_df, on="fid", how="inner")
 
         try:
             df = read_parquet(user_file)

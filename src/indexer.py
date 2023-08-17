@@ -464,9 +464,12 @@ class QueueProducer:
 
     @staticmethod
     def cast_warpcast(filepath: str = "data/casts.parquet") -> int:
-        query = f"SELECT MAX(timestamp) FROM read_parquet('{filepath}')"
-        time: List[int] = execute_query(query)  # a list of one element
-        return time[0] if time else 0
+        try:
+            query = f"SELECT MAX(timestamp) FROM read_parquet('{filepath}')"
+            time: List[int] = execute_query(query)  # a list of one element
+            return time[0] if time else 0
+        except Exception:
+            return 0
 
     @staticmethod
     def reaction_warpcast(
@@ -526,7 +529,8 @@ class BatchFetcher:
         local_t = QueueProducer.cast_warpcast()
         new_t = local_t + 1
         while new_t > local_t:
-            url = UrlMaker.cast_warpcast(limit=n, cursor=cursor)
+            url = UrlMaker.cast_warpcast(limit=n)
+            url = UrlMaker.cast_warpcast(limit=n, cursor=cursor) if cursor else url
             result = await Fetcher.cast_warpcast(url)
             cursor = result["next_cursor"]
             new_t = result["casts"][-1].timestamp
@@ -539,22 +543,24 @@ class BatchFetcher:
 
     @staticmethod
     async def reaction_warpcast(
-        reactions: List[Tuple[str, Optional[str]]],
+        hashes: List[Tuple[str, Optional[str]]],  # tuple of cast hash and cursors
         n: int = 1000,
         out: str = "queue/reaction_warpcast.ndjson",
     ) -> None:
         def _make_url(hash: str, cursor: Optional[str]) -> str:
+            if cursor is None:
+                return UrlMaker.reaction_warpcast(castHash=hash)
             return UrlMaker.reaction_warpcast(castHash=hash, cursor=cursor)
 
-        while reactions:
-            batch = reactions[:n]
+        while hashes:
+            batch = hashes[:n]
             urls = [_make_url(item[0], item[1]) for item in batch]
-            print(f"reaction_warpcast: {len(reactions) - n} left; fetching: {n}")
+            print(f"reaction_warpcast: {len(hashes) - n} left; fetching: {n}")
             data = await Fetcher.reaction_warpcast(urls)
             for cast in data:
                 json_append(out, cast["reactions"])
                 if cast["next_cursor"]:
-                    reactions.append((cast["target_hash"], cast["next_cursor"]))
+                    hashes.append((cast["target_hash"], cast["next_cursor"]))
             await asyncio.sleep(1)
 
 

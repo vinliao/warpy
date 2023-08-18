@@ -52,3 +52,4 @@ build/
 data*
 queue*
 playground.py
+.replicator

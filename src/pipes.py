@@ -1,8 +1,9 @@
 import csv
+import pandas as pd
 import datetime
 from typing import Any
 
-import src.indexer as indexer
+# import src.indexer as indexer
 
 # NOTE: how to query with "where array"
 # query = """
@@ -14,44 +15,51 @@ import src.indexer as indexer
 # F9766E
 # 00BFC4
 
+def example_query() -> pd.DataFrame:
+    # NOTE: must have replicator running, maybe have a shell script or something
+    pg_connection = "postgresql://app:password@localhost:6541/hub"
+    query = "SELECT * FROM user_data WHERE fid = 3"
+    return pd.read_sql(query, pg_connection, dtype_backend="pyarrow")
 
-def channel_volume(
-    t1: int = indexer.TimeConverter.ymd_to_unixms(2023, 7, 1),
-    t2: int = indexer.TimeConverter.ymd_to_unixms(2023, 8, 1),
-    limit: int = 5,
-) -> dict[str, Any]:
-    query = f"""
-    SELECT channel_id, COUNT(*) as count
-    FROM read_parquet('data/casts.parquet')
-    WHERE timestamp >= {t1} AND timestamp < {t2} AND channel_id IS NOT NULL
-    GROUP BY channel_id
-    ORDER BY count DESC
-    LIMIT {limit};
-    """
-    df = indexer.execute_query_df(query)
-    df["channel_id"] = df["channel_id"].apply(lambda x: f"f/{x}")
-    return {"result": df.to_dict(orient="records")}
+print(example_query())
+
+# def channel_volume(
+#     t1: int = indexer.TimeConverter.ymd_to_unixms(2023, 7, 1),
+#     t2: int = indexer.TimeConverter.ymd_to_unixms(2023, 8, 1),
+#     limit: int = 5,
+# ) -> dict[str, Any]:
+#     query = f"""
+#     SELECT channel_id, COUNT(*) as count
+#     FROM read_parquet('data/casts.parquet')
+#     WHERE timestamp >= {t1} AND timestamp < {t2} AND channel_id IS NOT NULL
+#     GROUP BY channel_id
+#     ORDER BY count DESC
+#     LIMIT {limit};
+#     """
+#     df = indexer.execute_query_df(query)
+#     df["channel_id"] = df["channel_id"].apply(lambda x: f"f/{x}")
+#     return {"result": df.to_dict(orient="records")}
 
 
-# TODO: very rough, needs refinement
-def channel_volume_table() -> None:
-    all_records = []
-    now = datetime.datetime.now()
-    for i in range(16):
-        t2 = now - datetime.timedelta(weeks=i)
-        t1 = now - datetime.timedelta(weeks=i + 1)
-        t1_unix = indexer.TimeConverter.datetime_to_unixms(t1)
-        t2_unix = indexer.TimeConverter.datetime_to_unixms(t2)
-        result = channel_volume(t1=t1_unix, t2=t2_unix, limit=10)
-        week_result = [t2.strftime("%b %d %Y")]
-        week_result += [record["channel_id"] for record in result["result"]]
-        all_records.append(week_result)
+# # TODO: very rough, needs refinement
+# def channel_volume_table() -> None:
+#     all_records = []
+#     now = datetime.datetime.now()
+#     for i in range(16):
+#         t2 = now - datetime.timedelta(weeks=i)
+#         t1 = now - datetime.timedelta(weeks=i + 1)
+#         t1_unix = indexer.TimeConverter.datetime_to_unixms(t1)
+#         t2_unix = indexer.TimeConverter.datetime_to_unixms(t2)
+#         result = channel_volume(t1=t1_unix, t2=t2_unix, limit=10)
+#         week_result = [t2.strftime("%b %d %Y")]
+#         week_result += [record["channel_id"] for record in result["result"]]
+#         all_records.append(week_result)
 
-    # Write to CSV
-    with open("channel_volumes.csv", "w", newline="") as file:
-        writer = csv.writer(file)
-        writer.writerow(["Date"] + [f"Rank {i}" for i in range(1, 11)])  # Header
-        writer.writerows(all_records)
+#     # Write to CSV
+#     with open("channel_volumes.csv", "w", newline="") as file:
+#         writer = csv.writer(file)
+#         writer.writerow(["Date"] + [f"Rank {i}" for i in range(1, 11)])  # Header
+        # writer.writerows(all_records)
 
 
 #     query_reaction_avg = f"""

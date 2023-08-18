@@ -7,6 +7,7 @@ certifi==2023.7.22
 charset-normalizer==3.2.0
 duckdb==0.8.1
 frozenlist==1.4.0
+greenlet==2.0.2
 idna==3.4
 iniconfig==2.0.0
 multidict==6.0.4
@@ -14,6 +15,8 @@ numpy==1.25.2
 packaging==23.1
 pandas==2.0.3
 pluggy==1.2.0
+psycopg-binary==3.1.10
+psycopg2-binary==2.9.7
 pyarrow==12.0.1
 pydantic==2.2.0
 pydantic_core==2.6.0
@@ -24,6 +27,7 @@ python-dotenv==1.0.0
 pytz==2023.3
 requests==2.31.0
 six==1.16.0
+SQLAlchemy==2.0.20
 typing_extensions==4.7.1
 tzdata==2023.3
 urllib3==2.0.4

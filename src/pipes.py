@@ -1,7 +1,6 @@
-import datetime
 import csv
-from collections import Counter
-from typing import Any, Hashable
+import datetime
+from typing import Any
 
 import src.indexer as indexer
 
@@ -40,7 +39,7 @@ def channel_volume_table() -> None:
     now = datetime.datetime.now()
     for i in range(16):
         t2 = now - datetime.timedelta(weeks=i)
-        t1 = now - datetime.timedelta(weeks=i+1)
+        t1 = now - datetime.timedelta(weeks=i + 1)
         t1_unix = indexer.TimeConverter.datetime_to_unixms(t1)
         t2_unix = indexer.TimeConverter.datetime_to_unixms(t2)
         result = channel_volume(t1=t1_unix, t2=t2_unix, limit=10)
@@ -49,9 +48,9 @@ def channel_volume_table() -> None:
         all_records.append(week_result)
 
     # Write to CSV
-    with open('channel_volumes.csv', 'w', newline='') as file:
+    with open("channel_volumes.csv", "w", newline="") as file:
         writer = csv.writer(file)
-        writer.writerow(["Date"] + [f"Rank {i}" for i in range(1, 11)]) # Header
+        writer.writerow(["Date"] + [f"Rank {i}" for i in range(1, 11)])  # Header
         writer.writerows(all_records)
 
 
@@ -126,14 +125,14 @@ def channel_volume_table() -> None:
 #     )
 
 #     query = f"""
-#     SELECT 
+#     SELECT
 #         DATE_TRUNC('week', TIMESTAMP 'epoch' + registered_at * INTERVAL '1 millisecond')
 #             AS week,
 #         COUNT(fid) AS total_registered,
 #         {query_counts}
 #     FROM (
-#         SELECT 
-#             u.fid, 
+#         SELECT
+#             u.fid,
 #             u.registered_at,
 #             COUNT(c.timestamp) AS cast_count
 #         FROM read_parquet('data/users.parquet') u

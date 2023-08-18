@@ -33,6 +33,44 @@ def stringify_keys(d: Dict[Hashable, Any]) -> Dict[str, Any]:
 
 
 # ======================================================================================
+# unit tests
+# ======================================================================================
+
+
+def test_time_converter() -> None:
+    assert abs(indexer.TimeConverter.ms_now() - int(round(time.time() * 1000))) < 10
+
+    # Test the conversion to milliseconds for all factors
+    assert indexer.TimeConverter.to_ms("minutes", 1) == 60 * 1000
+    assert indexer.TimeConverter.to_ms("hours", 2) == 2 * 60 * 60 * 1000
+    assert indexer.TimeConverter.to_ms("days", 1) == 24 * 60 * 60 * 1000
+    assert indexer.TimeConverter.to_ms("weeks", 1) == 7 * 24 * 60 * 60 * 1000
+    assert indexer.TimeConverter.to_ms("months", 1) == 30 * 24 * 60 * 60 * 1000
+    assert indexer.TimeConverter.to_ms("years", 1) == 365 * 24 * 60 * 60 * 1000
+
+    # Test the conversion from milliseconds for all factors
+    assert indexer.TimeConverter.from_ms("minutes", 60 * 1000) == 1
+    assert indexer.TimeConverter.from_ms("hours", 2 * 60 * 60 * 1000) == 2
+    assert indexer.TimeConverter.from_ms("days", 24 * 60 * 60 * 1000) == 1
+    assert indexer.TimeConverter.from_ms("weeks", 7 * 24 * 60 * 60 * 1000) == 1
+    assert indexer.TimeConverter.from_ms("months", 30 * 24 * 60 * 60 * 1000) == 1
+    assert indexer.TimeConverter.from_ms("years", 365 * 24 * 60 * 60 * 1000) == 1
+
+    # Test the conversion of time ago to UNIX milliseconds for all factors
+    factors = ["minutes", "hours", "days", "weeks", "months", "years"]
+    for factor in factors:
+        ms_ago = indexer.TimeConverter.ago_to_unixms(factor, 1)
+        now = indexer.TimeConverter.ms_now()
+        ms = indexer.TimeConverter.to_ms(factor, 1)
+        assert abs(ms_ago - (now - ms)) < 10
+
+    # Test the conversion of UNIX milliseconds to time ago for all factors
+    for factor in factors:
+        ms = indexer.TimeConverter.ms_now() - indexer.TimeConverter.to_ms(factor, 1)
+        assert abs(indexer.TimeConverter.unixms_to_ago(factor, ms) - 1) < 0.01
+
+
+# ======================================================================================
 # integration tests
 # ======================================================================================
 
@@ -171,6 +209,7 @@ async def test_cast_reaction_integration() -> None:
     # cast queue producer
     # ==================================================================================
 
+    c_queue_file = "testdata/cast_warpcast.ndjson"
     c_data_file = "testdata/casts.parquet"
 
     def random_hash(n: int) -> str:
@@ -187,40 +226,36 @@ async def test_cast_reaction_integration() -> None:
     c_max_t = c_df["timestamp"].max()
     assert indexer.QueueProducer.cast_warpcast(c_data_file) == c_max_t
 
+    # ==================================================================================
+    # cast batch fetcher
+    # ==================================================================================
 
-# ======================================================================================
-# unit tests
-# ======================================================================================
+    cast_limit = 25
+    hashes = []
+    os.remove(c_data_file)
+    c_url = indexer.UrlMaker.cast_warpcast(limit=cast_limit)
+    c_data = await indexer.Fetcher.cast_warpcast(c_url)
+    hashes += [cast.hash for cast in c_data["casts"]]
+    indexer.json_append(c_queue_file, c_data["casts"])
+    c_df = indexer.Merger.cast(c_queue_file, c_data_file)
+    assert isinstance(c_df, pd.DataFrame)
+    assert len(c_df) == cast_limit
 
+    c_df.to_parquet(c_data_file)
+    os.remove(c_queue_file)
 
-def test_time_converter() -> None:
-    assert abs(indexer.TimeConverter.ms_now() - int(round(time.time() * 1000))) < 10
+    # test merge with local parquet (second batch)
+    cursor = c_data["next_cursor"]
+    c_url = indexer.UrlMaker.cast_warpcast(limit=cast_limit, cursor=cursor)
+    c_data = await indexer.Fetcher.cast_warpcast(c_url)
+    hashes += [cast.hash for cast in c_data["casts"]]
+    indexer.json_append(c_queue_file, c_data["casts"])
+    c_df = indexer.Merger.cast(c_queue_file, c_data_file)
+    assert isinstance(c_df, pd.DataFrame)
+    assert len(c_df) == cast_limit * 2
+    assert set(list(c_df["hash"])) == set(hashes)
 
-    # Test the conversion to milliseconds for all factors
-    assert indexer.TimeConverter.to_ms("minutes", 1) == 60 * 1000
-    assert indexer.TimeConverter.to_ms("hours", 2) == 2 * 60 * 60 * 1000
-    assert indexer.TimeConverter.to_ms("days", 1) == 24 * 60 * 60 * 1000
-    assert indexer.TimeConverter.to_ms("weeks", 1) == 7 * 24 * 60 * 60 * 1000
-    assert indexer.TimeConverter.to_ms("months", 1) == 30 * 24 * 60 * 60 * 1000
-    assert indexer.TimeConverter.to_ms("years", 1) == 365 * 24 * 60 * 60 * 1000
-
-    # Test the conversion from milliseconds for all factors
-    assert indexer.TimeConverter.from_ms("minutes", 60 * 1000) == 1
-    assert indexer.TimeConverter.from_ms("hours", 2 * 60 * 60 * 1000) == 2
-    assert indexer.TimeConverter.from_ms("days", 24 * 60 * 60 * 1000) == 1
-    assert indexer.TimeConverter.from_ms("weeks", 7 * 24 * 60 * 60 * 1000) == 1
-    assert indexer.TimeConverter.from_ms("months", 30 * 24 * 60 * 60 * 1000) == 1
-    assert indexer.TimeConverter.from_ms("years", 365 * 24 * 60 * 60 * 1000) == 1
-
-    # Test the conversion of time ago to UNIX milliseconds for all factors
-    factors = ["minutes", "hours", "days", "weeks", "months", "years"]
-    for factor in factors:
-        ms_ago = indexer.TimeConverter.ago_to_unixms(factor, 1)
-        now = indexer.TimeConverter.ms_now()
-        ms = indexer.TimeConverter.to_ms(factor, 1)
-        assert abs(ms_ago - (now - ms)) < 10
-
-    # Test the conversion of UNIX milliseconds to time ago for all factors
-    for factor in factors:
-        ms = indexer.TimeConverter.ms_now() - indexer.TimeConverter.to_ms(factor, 1)
-        assert abs(indexer.TimeConverter.unixms_to_ago(factor, ms) - 1) < 0.01
+    # ==================================================================================
+    # reaction queue producer
+    # ==================================================================================
+    pass

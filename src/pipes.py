@@ -1,17 +1,41 @@
 import datetime
+import os
 
 import duckdb
 import pandas as pd
+import requests
 
 import utils
 
 
-def fetch_parent_url(channel_id: str) -> str:
+def download_fip2_ndjson(filename: str = "data/fip2.ndjson") -> None:
     url = "https://pub-3916d8c82abb435eb70175747fdc2119.r2.dev/fip2.ndjson"
-    query = f"select parent_url from read_json_auto('{url}) "
+    if os.path.exists(filename):
+        print(f"{filename} already exists.")
+        return
+
+    os.makedirs(os.path.dirname(filename), exist_ok=True)
+
+    response = requests.get(url)
+    if response.status_code == 200:
+        with open(filename, "wb") as file:
+            file.write(response.content)
+
+
+def get_url_by_id(channel_id: str) -> str:
+    f = "data/fip2.ndjson"
+    download_fip2_ndjson(f)
+    query = f"select parent_url from read_json_auto('{f}') "
     query += f"where channel_id = '{channel_id}'"
     con = duckdb.connect()
-    con.install_extension("httpfs")
+    return con.execute(query).fetchone()[0]
+
+
+def get_id_by_url(url: str) -> str:
+    f = "data/fip2.ndjson"
+    query = f"select channel_id from read_json_auto('{f}') "
+    query += f"where parent_url = '{url}'"
+    con = duckdb.connect()
     return con.execute(query).fetchone()[0]
 
 
@@ -43,6 +67,10 @@ def channel_volume_table() -> pd.DataFrame:
     now = utils.TimeConverter.ms_now()
     now = utils.TimeConverter.unixms_to_datetime(now)
 
+    query = "select channel_id from read_json_auto('data/fip2.ndjson')"
+    all_channels = execute_query_df(query)
+    # TODO: some parent_url are links with no channel_id, filter it out
+
     all_records = []
     while start_date < now:
         t1 = utils.TimeConverter.datetime_to_unixms(start_date)
@@ -53,7 +81,8 @@ def channel_volume_table() -> pd.DataFrame:
         week_result = [start_date.strftime("%b %d %Y")]
         # TODO: get hashmap, translate parent_url to channel_id
         week_result += [
-            f'{row["parent_url"]} (count: {row["count"]})' for _, row in df.iterrows()
+            f'{get_id_by_url(row["parent_url"])} (count: {row["count"]})'
+            for _, row in df.iterrows()
         ]
         all_records.append(week_result)
         start_date = t2_dt
@@ -61,9 +90,6 @@ def channel_volume_table() -> pd.DataFrame:
     columns = ["Date"] + [f"Rank {i}" for i in range(1, 11)]
     return pd.DataFrame(all_records[::-1], columns=columns)
 
-
-# df = channel_volume_table()
-# df.to_csv("data.csv", index=False)
 
 
 # # Write to CSV

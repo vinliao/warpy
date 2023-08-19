@@ -1,7 +1,4 @@
-import csv
 import pandas as pd
-import datetime
-from typing import Any
 
 # import src.indexer as indexer
 
@@ -15,11 +12,13 @@ from typing import Any
 # F9766E
 # 00BFC4
 
+
 def example_query() -> pd.DataFrame:
     # NOTE: must have replicator running, maybe have a shell script or something
     pg_connection = "postgresql://app:password@localhost:6541/hub"
     query = "SELECT * FROM user_data WHERE fid = 3"
     return pd.read_sql(query, pg_connection, dtype_backend="pyarrow")
+
 
 print(example_query())
 
@@ -59,7 +58,7 @@ print(example_query())
 #     with open("channel_volumes.csv", "w", newline="") as file:
 #         writer = csv.writer(file)
 #         writer.writerow(["Date"] + [f"Rank {i}" for i in range(1, 11)])  # Header
-        # writer.writerows(all_records)
+# writer.writerows(all_records)
 
 
 #     query_reaction_avg = f"""

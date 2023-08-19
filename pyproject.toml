@@ -26,6 +26,7 @@ exclude = [
     "node_modules",
     "venv",
 ]
+ignore: ["E701"]
 
 # Same as Black.
 line-length = 88

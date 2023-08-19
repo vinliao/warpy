@@ -1,5 +1,6 @@
-import time
 import datetime
+import time
+
 
 class TimeConverter:
     FACTORS = {
@@ -38,3 +39,7 @@ class TimeConverter:
     @staticmethod
     def datetime_to_unixms(dt: datetime.datetime) -> int:
         return int(time.mktime(dt.timetuple()) * 1000)
+
+    @staticmethod
+    def unixms_to_datetime(ms: int) -> datetime.datetime:
+        return datetime.datetime.fromtimestamp(ms / 1000)

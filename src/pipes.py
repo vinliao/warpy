@@ -1,26 +1,99 @@
+import datetime
+
+import duckdb
 import pandas as pd
 
-# import src.indexer as indexer
-
-# NOTE: how to query with "where array"
-# query = """
-#     SELECT images
-#     FROM read_json_auto('queue/cast_warpcast.ndjson')
-#     WHERE array_length(images) = 0;
-# """
-
-# F9766E
-# 00BFC4
+import utils
 
 
-def example_query() -> pd.DataFrame:
+def fetch_parent_url(channel_id: str) -> str:
+    url = "https://pub-3916d8c82abb435eb70175747fdc2119.r2.dev/fip2.ndjson"
+    query = f"select parent_url from read_json_auto('{url}) "
+    query += f"where channel_id = '{channel_id}'"
+    con = duckdb.connect()
+    con.install_extension("httpfs")
+    return con.execute(query).fetchone()[0]
+
+
+def execute_query_df(
+    query: str, pg_url: str = "postgresql://app:password@localhost:6541/hub"
+) -> pd.DataFrame:
     # NOTE: must have replicator running, maybe have a shell script or something
-    pg_connection = "postgresql://app:password@localhost:6541/hub"
-    query = "SELECT * FROM user_data WHERE fid = 3"
-    return pd.read_sql(query, pg_connection, dtype_backend="pyarrow")
+    return pd.read_sql(query, pg_url, dtype_backend="pyarrow")
 
 
-print(example_query())
+def channel_volume(start: int, end: int, limit: int = 10) -> pd.DataFrame:
+    t1 = f"to_timestamp({start / 1000})"
+    t2 = f"to_timestamp({end / 1000})"
+
+    query = f"""
+    SELECT parent_url, COUNT(*) as count
+    FROM casts
+    WHERE timestamp >= {t1} AND timestamp < {t2} AND parent_url IS NOT NULL
+    GROUP BY parent_url
+    ORDER BY count DESC
+    LIMIT {limit};
+    """
+    return execute_query_df(query)
+
+
+def channel_volume_table() -> pd.DataFrame:
+    genesis = 1685658318000  # first channel cast ever
+    start_date = utils.TimeConverter.unixms_to_datetime(genesis)
+    now = utils.TimeConverter.ms_now()
+    now = utils.TimeConverter.unixms_to_datetime(now)
+
+    all_records = []
+    while start_date < now:
+        t1 = utils.TimeConverter.datetime_to_unixms(start_date)
+        t2_dt = start_date + datetime.timedelta(weeks=1)
+        t2 = utils.TimeConverter.datetime_to_unixms(t2_dt)
+
+        df = channel_volume(start=t1, end=t2, limit=10)
+        week_result = [start_date.strftime("%b %d %Y")]
+        # TODO: get hashmap, translate parent_url to channel_id
+        week_result += [
+            f'{row["parent_url"]} (count: {row["count"]})' for _, row in df.iterrows()
+        ]
+        all_records.append(week_result)
+        start_date = t2_dt
+
+    columns = ["Date"] + [f"Rank {i}" for i in range(1, 11)]
+    return pd.DataFrame(all_records[::-1], columns=columns)
+
+
+# df = channel_volume_table()
+# df.to_csv("data.csv", index=False)
+
+
+# # Write to CSV
+# with open("channel_volumes.csv", "w", newline="") as file:
+#     writer = csv.writer(file)
+#     writer.writerow(["Date"] + [f"Rank {i}" for i in range(1, 11)])  # Header
+#     writer.writerows(all_records)  # Write all the records
+
+
+# # # TODO: very rough, needs refinement
+# def channel_volume_table() -> None:
+#     timestamp_start = 1685658318000
+#     all_records = []
+#     now = datetime.datetime.now()
+#     for i in range(16):
+#         t2 = now - datetime.timedelta(weeks=i)
+#         t1 = now - datetime.timedelta(weeks=i + 1)
+#         t1_unix = indexer.TimeConverter.datetime_to_unixms(t1)
+#         t2_unix = indexer.TimeConverter.datetime_to_unixms(t2)
+#         result = channel_volume(t1=t1_unix, t2=t2_unix, limit=10)
+#         week_result = [t2.strftime("%b %d %Y")]
+#         week_result += [record["channel_id"] for record in result["result"]]
+#         all_records.append(week_result)
+
+#     # Write to CSV
+#     with open("channel_volumes.csv", "w", newline="") as file:
+#         writer = csv.writer(file)
+#         writer.writerow(["Date"] + [f"Rank {i}" for i in range(1, 11)])  # Header
+# # writer.writerows(all_records)
+
 
 # def channel_volume(
 #     t1: int = indexer.TimeConverter.ymd_to_unixms(2023, 7, 1),

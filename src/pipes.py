@@ -63,33 +63,30 @@ def channel_volume(start: int, end: int, limit: int = 10) -> pd.DataFrame:
 
 
 def channel_volume_table() -> pd.DataFrame:
-    def get_all_parent_url() -> None:
-        df = pd.read_json("data/fip2.ndjson", lines=True)
-        return list(df["parent_url"].unique())
+    genesis = utils.TimeConverter.ymd_to_unixms(2023, 6, 1)
+    start = utils.TimeConverter.unixms_to_datetime(genesis)
+    end = utils.TimeConverter.unixms_to_datetime(utils.TimeConverter.ms_now())
+    parent_urls = pd.read_json("data/fip2.ndjson", lines=True)
+    parent_urls = list(parent_urls["parent_url"].unique())
 
-    genesis = 1685658318000  # first channel cast ever
-    start_date = utils.TimeConverter.unixms_to_datetime(genesis)
-    now = utils.TimeConverter.ms_now()
-    now = utils.TimeConverter.unixms_to_datetime(now)
+    def generate_intervals(start_date, end_date):
+        while start_date < end_date:
+            next_date = start_date + datetime.timedelta(weeks=1)
+            yield start_date, next_date
+            start_date = next_date
 
-    all_records = []
-    while start_date < now:
-        t1 = utils.TimeConverter.datetime_to_unixms(start_date)
-        t2_dt = start_date + datetime.timedelta(weeks=1)
-        t2 = utils.TimeConverter.datetime_to_unixms(t2_dt)
-
+    def process_interval(interval):
+        start, end = interval
+        t1 = utils.TimeConverter.datetime_to_unixms(start)
+        t2 = utils.TimeConverter.datetime_to_unixms(end)
         df = channel_volume(start=t1, end=t2, limit=10)
-        df = df[df["parent_url"].isin(get_all_parent_url())]
-        week_result = [start_date.strftime("%b %d %Y")]
-        week_result += [
-            f'{get_id_by_url(row["parent_url"])} (count: {row["count"]})'
-            for _, row in df.iterrows()
-        ]
-        all_records.append(week_result)
-        start_date = t2_dt
+        df = df[df["parent_url"].isin(parent_urls)]
 
-    print(all_records)
+        count_str = " (" + df["count"].astype(str) + " casts)"
+        df["result"] = "f/" + df["parent_url"].apply(get_id_by_url) + count_str
+        return [start.strftime("%b %d %Y")] + list(df["result"])
 
+    all_records = list(map(process_interval, generate_intervals(start, end)))
     columns = ["Date"] + [f"Rank {i}" for i in range(1, 11)]
     return pd.DataFrame(all_records[::-1], columns=columns)
 

@@ -66,8 +66,10 @@ def channel_volume_table() -> pd.DataFrame:
     genesis = utils.TimeConverter.ymd_to_unixms(2023, 6, 1)
     start = utils.TimeConverter.unixms_to_datetime(genesis)
     end = utils.TimeConverter.unixms_to_datetime(utils.TimeConverter.ms_now())
-    parent_urls = pd.read_json("data/fip2.ndjson", lines=True)
-    parent_urls = list(parent_urls["parent_url"].unique())
+
+    url_id_map = pd.read_json("data/fip2.ndjson", lines=True)
+    url_id_map = url_id_map.set_index("parent_url").to_dict()["channel_id"]
+    get_channel_id = lambda url: url_id_map[url]
 
     def generate_intervals(start_date, end_date):
         while start_date < end_date:
@@ -80,10 +82,10 @@ def channel_volume_table() -> pd.DataFrame:
         t1 = utils.TimeConverter.datetime_to_unixms(start)
         t2 = utils.TimeConverter.datetime_to_unixms(end)
         df = channel_volume(start=t1, end=t2, limit=10)
-        df = df[df["parent_url"].isin(parent_urls)]
+        df = df[df["parent_url"].isin(list(url_id_map.keys()))]
 
         count_str = " (" + df["count"].astype(str) + " casts)"
-        df["result"] = "f/" + df["parent_url"].apply(get_id_by_url) + count_str
+        df["result"] = "f/" + df["parent_url"].apply(get_channel_id) + count_str
         return [start.strftime("%b %d %Y")] + list(df["result"])
 
     all_records = list(map(process_interval, generate_intervals(start, end)))
@@ -91,7 +93,7 @@ def channel_volume_table() -> pd.DataFrame:
     return pd.DataFrame(all_records[::-1], columns=columns)
 
 
-# print(channel_volume_table())
+print(channel_volume_table())
 
 
 # # Write to CSV

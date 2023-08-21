@@ -50,6 +50,6 @@ build/
 
 # Ignore all dirs starts with "data"
 data/*
-queue*
+queue/*
 playground.py
 .replicator

@@ -1,5 +1,5 @@
 import os
-from typing import Dict, Generator, List, Tuple
+from typing import Any, Dict, Generator, List, Tuple
 
 import duckdb
 import pandas as pd
@@ -156,6 +156,51 @@ def cast_reaction_volume(
 
     return pd.merge(c_df, r_df, on="date", suffixes=("_casts", "_reactions"))
 
+
+def embed_count() -> pd.DataFrame:
+    import ast
+
+    def _categorize(embeds_list: List[Dict[str, Any]]) -> str:
+        ext_list = [".jpg", ".jpeg", ".png", ".gif"]
+        if not embeds_list:
+            return "no_embed"
+
+        has_image = False
+        has_link = False
+
+        for embed in embeds_list:
+            url = embed["url"]
+            if any(ext in url for ext in ext_list):
+                has_image = True
+            else:
+                has_link = True
+
+        if has_image and has_link:
+            return "image_and_link"
+        elif has_image:
+            return "image_only"
+        return "link_only"
+
+    query = "SELECT embeds, timestamp FROM casts WHERE "
+    query += "timestamp >= NOW() - INTERVAL '3 months'"
+    df = execute_query_df(query)
+    df["embeds"] = df["embeds"].apply(ast.literal_eval)
+    df["category"] = df["embeds"].apply(_categorize)
+    df["timestamp"] = pd.to_datetime(df["timestamp"])
+
+    # Group by 24-hour periods and category, then count
+    df = df.pivot_table(
+        index=pd.Grouper(key="timestamp", freq="D"),
+        columns="category",
+        values="embeds",  # You can use any column here since we're just counting
+        aggfunc="count",
+        fill_value=0,
+    )
+    df.reset_index(inplace=True)
+    df["total"] = (
+        df["image_and_link"] + df["image_only"] + df["link_only"] + df["no_embed"]
+    )
+    return df
 
 
 # TODO;

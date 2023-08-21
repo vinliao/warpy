@@ -1,3 +1,4 @@
+import ast
 import os
 from typing import Any, Dict, Generator, List, Tuple
 
@@ -158,28 +159,22 @@ def cast_reaction_volume(
 
 
 def embed_count() -> pd.DataFrame:
-    import ast
-
-    def _categorize(embeds_list: List[Dict[str, Any]]) -> str:
-        ext_list = [".jpg", ".jpeg", ".png", ".gif"]
+    def _categorize(embeds_list: list[dict[str, Any]]) -> str:
         if not embeds_list:
             return "no_embed"
 
-        has_image = False
-        has_link = False
-
-        for embed in embeds_list:
-            url = embed["url"]
-            if any(ext in url for ext in ext_list):
-                has_image = True
-            else:
-                has_link = True
+        exts = [".jpg", ".jpeg", ".png", ".gif"]
+        has_image = any(ext in embed["url"] for embed in embeds_list for ext in exts)
+        has_link = any(
+            all(ext not in embed["url"] for ext in exts) for embed in embeds_list
+        )
 
         if has_image and has_link:
             return "image_and_link"
         elif has_image:
             return "image_only"
-        return "link_only"
+        else:
+            return "link_only"
 
     query = "SELECT embeds, timestamp FROM casts WHERE "
     query += "timestamp >= NOW() - INTERVAL '3 months'"
@@ -188,19 +183,71 @@ def embed_count() -> pd.DataFrame:
     df["category"] = df["embeds"].apply(_categorize)
     df["timestamp"] = pd.to_datetime(df["timestamp"])
 
-    # Group by 24-hour periods and category, then count
     df = df.pivot_table(
         index=pd.Grouper(key="timestamp", freq="D"),
         columns="category",
-        values="embeds",  # You can use any column here since we're just counting
+        values="embeds",
         aggfunc="count",
         fill_value=0,
     )
     df.reset_index(inplace=True)
-    df["total"] = (
-        df["image_and_link"] + df["image_only"] + df["link_only"] + df["no_embed"]
-    )
+    cols = ["image_and_link", "image_only", "link_only", "no_embed"]
+    df["total"] = df[cols].sum(axis=1)
     return df
+
+
+def top_casts_embed() -> pd.DataFrame:
+    def _categorize(embeds_list: list[dict[str, Any]]) -> str:
+        if not embeds_list:
+            return "no_embed"
+
+        exts = [".jpg", ".jpeg", ".png", ".gif"]
+        has_image = any(ext in embed["url"] for embed in embeds_list for ext in exts)
+        has_link = any(
+            all(ext not in embed["url"] for ext in exts) for embed in embeds_list
+        )
+
+        if has_image and has_link:
+            return "image_and_link"
+        elif has_image:
+            return "image_only"
+        else:
+            return "link_only"
+
+    subquery = """
+        SELECT 
+            c.id,
+            c.embeds,
+            c.timestamp,
+            ROW_NUMBER() OVER(PARTITION BY DATE(c.timestamp) ORDER BY COUNT(r.id) DESC) AS rank
+        FROM casts c
+        LEFT JOIN reactions r ON c.hash = r.target_hash
+        WHERE c.timestamp >= NOW() - INTERVAL '3 months'
+        GROUP BY c.id, c.timestamp
+    """
+
+    query = f"""
+        WITH ranked_casts AS ({subquery})
+        SELECT
+            rc.id,
+            rc.embeds,
+            DATE(rc.timestamp) AS date
+        FROM ranked_casts rc
+        WHERE rc.rank <= 50
+    """
+
+    # NOTE: is the value of this is actually correct?
+    df = execute_query_df(query)
+    df["embeds"] = df["embeds"].apply(ast.literal_eval)
+    df["category"] = df["embeds"].apply(_categorize)
+    df = df.groupby(["date", "category"]).size().reset_index(name="count")
+    df = df.pivot(index="date", columns="category", values="count").fillna(0)
+    df = df.astype(int)
+    df.reset_index(inplace=True)
+    df = df.iloc[::-1]
+    return df
+
+print(top_casts_embed())
 
 
 # TODO;

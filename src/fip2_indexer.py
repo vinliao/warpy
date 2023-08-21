@@ -16,7 +16,7 @@ def make_warpcast_request(url: str) -> Any:
     return response.json()
 
 
-def url_maker(limit: int = 1000, cursor: Optional[str] = None):
+def url_maker(limit: int = 1000, cursor: Optional[str] = None) -> str:
     warpcast_url = "https://api.warpcast.com/v2/recent-casts"
     if cursor:
         return f"{warpcast_url}?limit={limit}&cursor={cursor}"
@@ -47,7 +47,7 @@ def not_fip2(cast: Any) -> Any:
     return cast.get("parentSource") is not None
 
 
-def json_append(file_path: str, data: List[Dict]) -> None:
+def json_append(file_path: str, data: List[Dict[str, Any]]) -> None:
     with open(file_path, "a") as f:
         for item in data:
             json.dump(item, f)

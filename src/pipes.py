@@ -33,6 +33,7 @@ def get_url_by_id(channel_id: str) -> str:
 
 def get_id_by_url(url: str) -> str:
     f = "data/fip2.ndjson"
+    download_fip2_ndjson(f)
     query = f"select channel_id from read_json_auto('{f}') "
     query += f"where parent_url = '{url}'"
     con = duckdb.connect()
@@ -62,14 +63,14 @@ def channel_volume(start: int, end: int, limit: int = 10) -> pd.DataFrame:
 
 
 def channel_volume_table() -> pd.DataFrame:
+    def get_all_parent_url() -> None:
+        df = pd.read_json("data/fip2.ndjson", lines=True)
+        return list(df["parent_url"].unique())
+
     genesis = 1685658318000  # first channel cast ever
     start_date = utils.TimeConverter.unixms_to_datetime(genesis)
     now = utils.TimeConverter.ms_now()
     now = utils.TimeConverter.unixms_to_datetime(now)
-
-    query = "select channel_id from read_json_auto('data/fip2.ndjson')"
-    all_channels = execute_query_df(query)
-    # TODO: some parent_url are links with no channel_id, filter it out
 
     all_records = []
     while start_date < now:
@@ -78,8 +79,8 @@ def channel_volume_table() -> pd.DataFrame:
         t2 = utils.TimeConverter.datetime_to_unixms(t2_dt)
 
         df = channel_volume(start=t1, end=t2, limit=10)
+        df = df[df["parent_url"].isin(get_all_parent_url())]
         week_result = [start_date.strftime("%b %d %Y")]
-        # TODO: get hashmap, translate parent_url to channel_id
         week_result += [
             f'{get_id_by_url(row["parent_url"])} (count: {row["count"]})'
             for _, row in df.iterrows()
@@ -87,9 +88,13 @@ def channel_volume_table() -> pd.DataFrame:
         all_records.append(week_result)
         start_date = t2_dt
 
+    print(all_records)
+
     columns = ["Date"] + [f"Rank {i}" for i in range(1, 11)]
     return pd.DataFrame(all_records[::-1], columns=columns)
 
+
+# print(channel_volume_table())
 
 
 # # Write to CSV

@@ -49,7 +49,7 @@ build/
 *.ndjson
 
 # Ignore all dirs starts with "data"
-data*
+data/*
 queue*
 playground.py
 .replicator

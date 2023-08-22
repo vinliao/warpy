@@ -1,6 +1,6 @@
 import ast
 import os
-from typing import Any, Dict, Generator, List, Tuple, Optional
+from typing import Any, Dict, Generator, List, Optional, Tuple
 
 import duckdb
 import pandas as pd
@@ -236,12 +236,11 @@ def top_casts_embed_count(
         has_image = any(ext in e["url"] for e in embeds for ext in exts)
         has_link = any(all(ext not in e["url"] for ext in exts) for e in embeds)
 
-        if has_image and has_link:
-            return "image_and_link"
-        elif has_image:
+        if has_image:
             return "image_only"
-        else:
+        if has_link:
             return "link_only"
+        return "other"
 
     query = f"""
         WITH ranked_casts AS (
@@ -272,7 +271,6 @@ def top_casts_embed_count(
     df = execute_query(query)
     df["embeds"] = df["embeds"].apply(ast.literal_eval)
     df["category"] = df["embeds"].apply(_categorize)
-    df.to_csv("data/dummy.csv", index=False)
     df = (
         df.groupby(["date", "category"])
         .apply(lambda x: x.nlargest(10, "reactions_count"))

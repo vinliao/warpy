@@ -37,6 +37,10 @@ class TimeConverter:
         return int(time.mktime((year, month, day, 0, 0, 0, 0, 0, 0)) * 1000)
 
     @staticmethod
+    def unixms_to_ymd(ms: int) -> tuple[int, int, int]:
+        return datetime.datetime.fromtimestamp(ms / 1000).timetuple()[:3]
+
+    @staticmethod
     def datetime_to_unixms(dt: datetime.datetime) -> int:
         return int(time.mktime(dt.timetuple()) * 1000)
 

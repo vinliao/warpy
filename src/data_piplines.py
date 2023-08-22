@@ -1,12 +1,16 @@
 import ast
 import os
-from typing import Any, Dict, Generator, List, Tuple
+from typing import Any, Dict, Generator, List, Tuple, Optional
 
 import duckdb
 import pandas as pd
 import requests
 
 import utils
+
+# ======================================================================================
+# utils
+# ======================================================================================
 
 
 def download_fip2_ndjson(filename: str = "data/fip2.ndjson") -> None:
@@ -48,11 +52,27 @@ def get_id_by_url(url: str) -> str:
 
 
 # figure out how to cache the db so i don't have to keep running on unimportant queries
-def execute_query_df(
+def execute_query(
     query: str, pg_url: str = "postgresql://app:password@localhost:6541/hub"
 ) -> pd.DataFrame:
     # NOTE: must have replicator running, maybe have a shell script or something
     return pd.read_sql(query, pg_url, dtype_backend="pyarrow")
+
+
+def to_hex(column: str, name: Optional[str] = None) -> str:
+    return f"'0x' || encode({column}, 'hex') AS {name if name else column}"
+
+
+def to_bytea(hex_column: str) -> str:
+    # Removing the '0x' prefix if present
+    if hex_column.startswith("0x"):
+        hex_column = hex_column[2:]
+    return f"decode('{hex_column}', 'hex')"
+
+
+# ======================================================================================
+# pipelines
+# ======================================================================================
 
 
 def channel_volume(start: int, end: int, limit: int = 10) -> pd.DataFrame:
@@ -67,7 +87,7 @@ def channel_volume(start: int, end: int, limit: int = 10) -> pd.DataFrame:
     ORDER BY count DESC
     LIMIT {limit};
     """
-    return execute_query_df(query)
+    return execute_query(query)
 
 
 def channel_volume_table(
@@ -115,7 +135,7 @@ def popular_users(
         WHERE type = 6
         """
 
-        df = execute_query_df(query)
+        df = execute_query(query)
         return dict(zip(df["fid"], df["username"]))
 
     t1 = f"to_timestamp({start / 1000})"
@@ -130,7 +150,7 @@ def popular_users(
         LIMIT {limit}
     """
 
-    df = execute_query_df(query)
+    df = execute_query(query)
     username_map = get_username_map()
     df["username"] = df["fid"].apply(lambda fid: username_map.get(fid, "unknown"))
     return df
@@ -150,7 +170,7 @@ def cast_reaction_volume(
             GROUP BY date
             ORDER BY date
         """
-        return execute_query_df(query)
+        return execute_query(query)
 
     c_df = daily_bucket("casts")
     r_df = daily_bucket("reactions")
@@ -158,16 +178,20 @@ def cast_reaction_volume(
     return pd.merge(c_df, r_df, on="date", suffixes=("_casts", "_reactions"))
 
 
-def embed_count() -> pd.DataFrame:
-    def _categorize(embeds_list: list[dict[str, Any]]) -> str:
-        if not embeds_list:
+def embed_count(
+    start: int = utils.TimeConverter.ymd_to_unixms(2023, 7, 1),
+    end: int = utils.TimeConverter.ymd_to_unixms(2023, 8, 1),
+) -> pd.DataFrame:
+    t1 = f"to_timestamp({start / 1000})"
+    t2 = f"to_timestamp({end / 1000})"
+
+    def _categorize(embeds: list[dict[str, Any]]) -> str:
+        if not embeds:
             return "no_embed"
 
         exts = [".jpg", ".jpeg", ".png", ".gif"]
-        has_image = any(ext in embed["url"] for embed in embeds_list for ext in exts)
-        has_link = any(
-            all(ext not in embed["url"] for ext in exts) for embed in embeds_list
-        )
+        has_image = any(ext in e["url"] for e in embeds for ext in exts)
+        has_link = any(all(ext not in e["url"] for ext in exts) for e in embeds)
 
         if has_image and has_link:
             return "image_and_link"
@@ -177,8 +201,8 @@ def embed_count() -> pd.DataFrame:
             return "link_only"
 
     query = "SELECT embeds, timestamp FROM casts WHERE "
-    query += "timestamp >= NOW() - INTERVAL '3 months'"
-    df = execute_query_df(query)
+    query += f"timestamp >= {t1} AND timestamp < {t2}"
+    df = execute_query(query)
     df["embeds"] = df["embeds"].apply(ast.literal_eval)
     df["category"] = df["embeds"].apply(_categorize)
     df["timestamp"] = pd.to_datetime(df["timestamp"])
@@ -193,19 +217,24 @@ def embed_count() -> pd.DataFrame:
     df.reset_index(inplace=True)
     cols = ["image_and_link", "image_only", "link_only", "no_embed"]
     df["total"] = df[cols].sum(axis=1)
+    df = df.iloc[::-1]
     return df
 
 
-def top_casts_embed() -> pd.DataFrame:
-    def _categorize(embeds_list: list[dict[str, Any]]) -> str:
-        if not embeds_list:
+def top_casts_embed_count(
+    start: int = utils.TimeConverter.ymd_to_unixms(2023, 7, 1),
+    end: int = utils.TimeConverter.ymd_to_unixms(2023, 8, 1),
+) -> pd.DataFrame:
+    t1 = f"to_timestamp({start / 1000})"
+    t2 = f"to_timestamp({end / 1000})"
+
+    def _categorize(embeds: list[dict[str, Any]]) -> str:
+        if not embeds:
             return "no_embed"
 
         exts = [".jpg", ".jpeg", ".png", ".gif"]
-        has_image = any(ext in embed["url"] for embed in embeds_list for ext in exts)
-        has_link = any(
-            all(ext not in embed["url"] for ext in exts) for embed in embeds_list
-        )
+        has_image = any(ext in e["url"] for e in embeds for ext in exts)
+        has_link = any(all(ext not in e["url"] for ext in exts) for e in embeds)
 
         if has_image and has_link:
             return "image_and_link"
@@ -214,41 +243,64 @@ def top_casts_embed() -> pd.DataFrame:
         else:
             return "link_only"
 
-    subquery = """
-        SELECT 
-            c.id,
-            c.embeds,
-            c.timestamp,
-            ROW_NUMBER() OVER(PARTITION BY DATE(c.timestamp) ORDER BY COUNT(r.id) DESC) AS rank
-        FROM casts c
-        LEFT JOIN reactions r ON c.hash = r.target_hash
-        WHERE c.timestamp >= NOW() - INTERVAL '3 months'
-        GROUP BY c.id, c.timestamp
-    """
-
     query = f"""
-        WITH ranked_casts AS ({subquery})
+        WITH ranked_casts AS (
+            SELECT 
+                c.id,
+                c.embeds,
+                c.timestamp,
+                c.hash,
+                SUM(CASE r.reaction_type WHEN 1 THEN 1 WHEN 2 THEN 3 ELSE 0 END) 
+                    AS reactions_count,
+                ROW_NUMBER() OVER(PARTITION BY DATE(c.timestamp) ORDER BY 
+                    SUM(CASE r.reaction_type WHEN 1 THEN 1 WHEN 2 THEN 3 ELSE 0 END) 
+                    DESC) AS rank
+            FROM casts c
+            LEFT JOIN reactions r ON c.hash = r.target_hash
+            WHERE c.timestamp >= {t1} AND c.timestamp < {t2}
+            GROUP BY c.id, c.timestamp, c.hash
+        )
         SELECT
-            rc.id,
-            rc.embeds,
-            DATE(rc.timestamp) AS date
+            {to_hex('rc.hash', 'encoded_hash')},
+            rc.reactions_count,
+            DATE(rc.timestamp) AS date,
+            rc.embeds
         FROM ranked_casts rc
         WHERE rc.rank <= 50
     """
 
-    # NOTE: is the value of this is actually correct?
-    df = execute_query_df(query)
+    df = execute_query(query)
     df["embeds"] = df["embeds"].apply(ast.literal_eval)
     df["category"] = df["embeds"].apply(_categorize)
-    df = df.groupby(["date", "category"]).size().reset_index(name="count")
-    df = df.pivot(index="date", columns="category", values="count").fillna(0)
-    df = df.astype(int)
+    df.to_csv("data/dummy.csv", index=False)
+    df = (
+        df.groupby(["date", "category"])
+        .apply(lambda x: x.nlargest(10, "reactions_count"))
+        .reset_index(drop=True)
+    )
+    df = (
+        df.groupby(["date", "category"])["reactions_count"]
+        .mean()
+        .reset_index(name="avg_reactions")
+    )
+    df = df.pivot(index="date", columns="category", values="avg_reactions").fillna(0)
     df.reset_index(inplace=True)
     df = df.iloc[::-1]
     return df
 
-print(top_casts_embed())
 
+# end = utils.TimeConverter.ms_now()
+# start = end - utils.TimeConverter.to_ms("months", 3)
+# df = top_casts_embed_count(start, end)
+# df.to_csv("data/dummy.csv", index=False)
+
+
+# df = top_casts_embed_count()
+# print(df)
+# df.to_csv("data/dummy.csv", index=False)
+
+# df = top_casts_embed_count()
+# df.to_csv("data/dummy.csv", index=False)
 
 # TODO;
 # def activation_table(
@@ -285,6 +337,6 @@ print(top_casts_embed())
 #     GROUP BY week
 #     """
 
-#     df = execute_query_df(query)
+#     df = execute_query(query)
 #     df["week"] = df["week"].dt.strftime("%Y-%m-%d")
 #     return df

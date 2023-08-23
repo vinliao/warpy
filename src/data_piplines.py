@@ -75,6 +75,7 @@ def to_bytea(hex_column: str) -> str:
 # ======================================================================================
 
 
+# TODO: volume must also include children, not only root
 def channel_volume(start: int, end: int, limit: int = 10) -> pd.DataFrame:
     t1 = f"to_timestamp({start / 1000})"
     t2 = f"to_timestamp({end / 1000})"
@@ -164,7 +165,8 @@ def cast_reaction_volume(
         t1 = f"to_timestamp({start / 1000})"
         t2 = f"to_timestamp({end / 1000})"
         query = f"""
-            SELECT date_trunc('day', timestamp) AS date, COUNT(*) AS count
+            SELECT date_trunc('day', timestamp) AS date, COUNT(*) AS count, 
+                COUNT(DISTINCT fid) AS unique_fids
             FROM {table}
             WHERE timestamp >= {t1} AND timestamp < {t2}
             GROUP BY date
@@ -175,7 +177,45 @@ def cast_reaction_volume(
     c_df = daily_bucket("casts")
     r_df = daily_bucket("reactions")
 
-    return pd.merge(c_df, r_df, on="date", suffixes=("_casts", "_reactions"))
+    df = pd.merge(c_df, r_df, on="date", suffixes=("_casts", "_reactions"))
+    df = df.iloc[::-1]
+    return df
+
+
+def frequency_heatmap(start: int, end: int) -> pd.DataFrame:
+    def execute_hourly_query(table: str) -> pd.DataFrame:
+        t1 = f"to_timestamp({start / 1000})"
+        t2 = f"to_timestamp({end / 1000})"
+        query = f"""
+            WITH hourly_data AS (
+                SELECT 
+                    EXTRACT(HOUR FROM timestamp) AS hour,
+                    EXTRACT(DOW FROM timestamp) AS day_of_week,
+                    COUNT(*) AS count
+                FROM {table}
+                WHERE timestamp >= {t1} AND timestamp < {t2}
+                GROUP BY hour, day_of_week
+            )
+            SELECT 
+                hour,
+                AVG(CASE WHEN day_of_week = 0 THEN count END) AS "Sun",
+                AVG(CASE WHEN day_of_week = 1 THEN count END) AS "Mon",
+                AVG(CASE WHEN day_of_week = 2 THEN count END) AS "Tue",
+                AVG(CASE WHEN day_of_week = 3 THEN count END) AS "Wed",
+                AVG(CASE WHEN day_of_week = 4 THEN count END) AS "Thu",
+                AVG(CASE WHEN day_of_week = 5 THEN count END) AS "Fri",
+                AVG(CASE WHEN day_of_week = 6 THEN count END) AS "Sat"
+            FROM hourly_data
+            GROUP BY hour
+            ORDER BY hour;
+        """
+        return execute_query(query)
+
+    casts_df = execute_hourly_query("casts")
+    reactions_df = execute_hourly_query("reactions")
+
+    df = pd.merge(casts_df, reactions_df, on="hour", suffixes=("_casts", "_reactions"))
+    return df
 
 
 def embed_count(

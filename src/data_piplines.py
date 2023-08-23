@@ -75,25 +75,36 @@ def to_bytea(hex_column: str) -> str:
 # ======================================================================================
 
 
-# TODO: volume must also include children, not only root
-def channel_volume(start: int, end: int, limit: int = 10) -> pd.DataFrame:
-    t1 = f"to_timestamp({start / 1000})"
-    t2 = f"to_timestamp({end / 1000})"
-
-    query = f"""
-    SELECT parent_url, COUNT(*) as count
-    FROM casts
-    WHERE timestamp >= {t1} AND timestamp < {t2} AND parent_url IS NOT NULL
-    GROUP BY parent_url
-    ORDER BY count DESC
-    LIMIT {limit};
-    """
-    return execute_query(query)
-
-
 def channel_volume_table(
     start: int = utils.TimeConverter.ymd_to_unixms(2023, 6, 1)
 ) -> pd.DataFrame:
+    def _channel_volume(start: int, end: int, limit: int = 10) -> pd.DataFrame:
+        t1 = f"to_timestamp({start / 1000})"
+        t2 = f"to_timestamp({end / 1000})"
+
+        query = f"""
+            WITH cast_data AS (
+                SELECT parent_url, COUNT(*) as cast_count
+                FROM casts
+                WHERE timestamp >= {t1} AND timestamp < {t2} AND parent_url IS NOT NULL
+                GROUP BY parent_url
+            ),
+            reaction_data AS (
+                SELECT c.parent_url, COUNT(r.id) as reaction_count
+                FROM casts c
+                LEFT JOIN reactions r ON r.target_hash = c.hash
+                WHERE c.timestamp >= {t1} AND c.timestamp < {t2} 
+                    AND c.parent_url IS NOT NULL
+                GROUP BY c.parent_url
+            )
+            SELECT cd.parent_url
+            FROM cast_data cd
+            LEFT JOIN reaction_data rd ON cd.parent_url = rd.parent_url
+            ORDER BY (cd.cast_count + COALESCE(rd.reaction_count, 0)) DESC
+            LIMIT {limit};
+        """
+        return execute_query(query)
+
     # NOTE: 2023/06/01 is first-ever channel cast
     end = utils.TimeConverter.ms_now()
 
@@ -112,11 +123,10 @@ def channel_volume_table(
 
     def process_interval(interval: Tuple[int, int]) -> List[str]:
         start, end = interval
-        df = channel_volume(start=start, end=end, limit=10)
+        df = _channel_volume(start=start, end=end, limit=10)
         df = df[df["parent_url"].isin(list(url_id_map.keys()))]
 
-        count_str = " (" + df["count"].astype(str) + " casts)"
-        df["result"] = "f/" + df["parent_url"].apply(get_channel_id) + count_str
+        df["result"] = "f/" + df["parent_url"].apply(get_channel_id)
         return [utils.TimeConverter.unixms_to_ymd(start)] + list(df["result"])
 
     all_records = list(map(process_interval, generate_intervals(start, end)))

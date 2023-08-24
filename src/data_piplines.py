@@ -1,8 +1,7 @@
 import ast
 import os
-from typing import Any, Dict, Generator, List, Optional, Tuple
+from typing import Any, Dict, Generator, List, Literal, Optional, Tuple
 
-import duckdb
 import pandas as pd
 import requests
 
@@ -27,30 +26,6 @@ def download_fip2_ndjson(filename: str = "data/fip2.ndjson") -> None:
             file.write(response.content)
 
 
-def get_url_by_id(channel_id: str) -> str:
-    f = "data/fip2.ndjson"
-    download_fip2_ndjson(f)
-    query = f"select parent_url from read_json_auto('{f}') "
-    query += f"where channel_id = '{channel_id}'"
-    con = duckdb.connect()
-    r = con.execute(query).fetchone()
-    assert isinstance(r, tuple)
-    assert isinstance(r[0], str)
-    return r[0]
-
-
-def get_id_by_url(url: str) -> str:
-    f = "data/fip2.ndjson"
-    download_fip2_ndjson(f)
-    query = f"select channel_id from read_json_auto('{f}') "
-    query += f"where parent_url = '{url}'"
-    con = duckdb.connect()
-    r = con.execute(query).fetchone()
-    assert isinstance(r, tuple)
-    assert isinstance(r[0], str)
-    return r[0]
-
-
 # figure out how to cache the db so i don't have to keep running on unimportant queries
 def execute_query(
     query: str, pg_url: str = "postgresql://app:password@localhost:6541/hub"
@@ -68,6 +43,44 @@ def to_bytea(hex_column: str) -> str:
     if hex_column.startswith("0x"):
         hex_column = hex_column[2:]
     return f"decode('{hex_column}', 'hex')"
+
+
+# ======================================================================================
+# lookup tables
+# ======================================================================================
+
+
+def reverse_dict(d: Dict[Any, Any]) -> Dict[Any, Any]:
+    return {v: k for k, v in d.items()}
+
+
+def channel_lookup(type: Literal["channel_id", "parent_url"]) -> Dict[str, str]:
+    def make_parent_url_lookup() -> Dict[str, str]:
+        df = pd.read_json("data/fip2.ndjson", lines=True)
+        return dict(zip(df["parent_url"], df["channel_id"]))
+
+    if type == "channel_id":
+        return make_parent_url_lookup()
+    elif type == "parent_url":
+        return reverse_dict(make_parent_url_lookup())
+
+
+def fid_lookup(type: Literal["fid", "username"]) -> Dict[Any, Any]:
+    def make_username_lookup() -> Dict[int, str]:
+        # value of user_data type 6 is username
+        query = """
+        SELECT fid, value AS username
+        FROM user_data
+        WHERE type = 6
+        """
+
+        df = execute_query(query)
+        return dict(zip(df["fid"], df["username"]))
+
+    if type == "username":
+        return make_username_lookup()
+    elif type == "fid":
+        return reverse_dict(make_username_lookup())
 
 
 # ======================================================================================
@@ -336,19 +349,6 @@ def top_casts_embed_count(
     df = df.iloc[::-1]
     return df
 
-
-# end = utils.TimeConverter.ms_now()
-# start = end - utils.TimeConverter.to_ms("months", 3)
-# df = top_casts_embed_count(start, end)
-# df.to_csv("data/dummy.csv", index=False)
-
-
-# df = top_casts_embed_count()
-# print(df)
-# df.to_csv("data/dummy.csv", index=False)
-
-# df = top_casts_embed_count()
-# df.to_csv("data/dummy.csv", index=False)
 
 # TODO;
 # def activation_table(

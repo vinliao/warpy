@@ -205,6 +205,32 @@ def cast_reaction_volume(
     return df
 
 
+def channel_volume(
+    start: int = utils.TimeConverter.ymd_to_unixms(2023, 7, 1),
+    end: int = utils.TimeConverter.ymd_to_unixms(2023, 8, 1),
+) -> pd.DataFrame:
+    t1 = f"to_timestamp({start / 1000})"
+    t2 = f"to_timestamp({end / 1000})"
+
+    channel_id_lookup = channel_lookup("channel_id")
+    parent_urls = list(channel_id_lookup.keys())
+    parent_urls_str = ",".join(f"'{url}'" for url in parent_urls)
+
+    query = f"""
+        SELECT date_trunc('day', timestamp) AS date,
+            COUNT(*) FILTER (WHERE parent_url IS NOT NULL AND parent_url 
+                IN ({parent_urls_str})) AS channel_count,
+            COUNT(*) FILTER (WHERE parent_url IS NULL) AS non_channel_count
+        FROM casts
+        WHERE timestamp >= {t1} AND timestamp < {t2}
+        GROUP BY date
+        ORDER BY date
+    """
+
+    df = execute_query(query)
+    return df.iloc[::-1]
+
+
 def frequency_heatmap(start: int, end: int) -> pd.DataFrame:
     def execute_hourly_query(table: str) -> pd.DataFrame:
         t1 = f"to_timestamp({start / 1000})"

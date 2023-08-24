@@ -88,6 +88,129 @@ def fid_lookup(type: Literal["fid", "username"]) -> Dict[Any, Any]:
 # ======================================================================================
 
 
+def popular_users(
+    start: int = utils.TimeConverter.ymd_to_unixms(2023, 7, 1),
+    end: int = utils.TimeConverter.ymd_to_unixms(2023, 8, 1),
+    limit: int = 20,
+) -> pd.DataFrame:
+    t1 = f"to_timestamp({start / 1000})"
+    t2 = f"to_timestamp({end / 1000})"
+
+    query_reactions = f"""
+        SELECT
+            c.fid AS fid,
+            COUNT(*) AS reactions_received
+        FROM
+            reactions r
+            INNER JOIN casts c ON c.hash = r.target_hash
+            AND r.timestamp >= {t1}
+            AND r.timestamp < {t2}
+        GROUP BY
+            c.fid
+        ORDER BY
+            reactions_received DESC
+        LIMIT
+            {limit}
+    """
+
+    df_reactions = execute_query(query_reactions)
+    fids_str = ",".join(str(fid) for fid in df_reactions["fid"])
+    query_casts = f"""
+        SELECT
+            fid,
+            COUNT(*) AS total_casts
+        FROM
+            casts
+        WHERE
+            timestamp >= {t1}
+            AND timestamp < {t2}
+            AND fid IN ({fids_str})
+        GROUP BY
+            fid
+    """
+    
+    df_casts = execute_query(query_casts)
+    df = pd.merge(df_reactions, df_casts, on="fid", how="left")
+    df["total_casts"] = df["total_casts"].fillna(0)
+
+    username_lookup = fid_lookup("username")
+    df["username"] = df["fid"].apply(lambda fid: username_lookup.get(fid, "unknown"))
+    return df
+
+
+def cast_reaction_volume(
+    start: int = utils.TimeConverter.ymd_to_unixms(2023, 7, 1),
+    end: int = utils.TimeConverter.ymd_to_unixms(2023, 8, 1),
+) -> pd.DataFrame:
+    def _get_data(col: str) -> pd.DataFrame:
+        t1 = f"to_timestamp({start / 1000})"
+        t2 = f"to_timestamp({end / 1000})"
+
+        query = f"""
+            SELECT
+                date_trunc('day', timestamp) AS date,
+                COUNT(*) AS count,
+                COUNT(DISTINCT fid) AS unique_fids
+            FROM
+                {col}
+            WHERE
+                timestamp >= {t1}
+                AND timestamp < {t2}
+            GROUP BY
+                date
+            ORDER BY
+                date
+        """
+        return execute_query(query)
+
+    c_df = _get_data("casts")
+    r_df = _get_data("reactions")
+
+    df = pd.merge(c_df, r_df, on="date", suffixes=("_casts", "_reactions"))
+    df = df.iloc[::-1]
+    return df
+
+
+def cast_channel_volume(
+    start: int = utils.TimeConverter.ymd_to_unixms(2023, 7, 1),
+    end: int = utils.TimeConverter.ymd_to_unixms(2023, 8, 1),
+) -> pd.DataFrame:
+    t1 = f"to_timestamp({start / 1000})"
+    t2 = f"to_timestamp({end / 1000})"
+
+    channel_id_lookup = channel_lookup("channel_id")
+    parent_urls = list(channel_id_lookup.keys())
+    parent_urls_str = ",".join(f"'{url}'" for url in parent_urls)
+
+    query = f"""
+        SELECT
+            date_trunc('day', timestamp) AS date,
+            COUNT(*) FILTER (
+                WHERE
+                    parent_url IS NOT NULL
+                    AND parent_url IN ({parent_urls_str})
+            ) AS channel_count,
+            COUNT(*) FILTER (
+                WHERE
+                    parent_url IS NULL
+            ) AS non_channel_count
+        FROM
+            casts
+        WHERE
+            timestamp >= {t1}
+            AND timestamp < {t2}
+        GROUP BY
+            date
+        ORDER BY
+            date
+    """
+
+    df = execute_query(query)
+    df = df.iloc[::-1]
+    return df
+
+
+# TODO: too complex!
 def channel_volume_table(
     start: int = utils.TimeConverter.ymd_to_unixms(2023, 6, 1)
 ) -> pd.DataFrame:
@@ -145,90 +268,6 @@ def channel_volume_table(
     all_records = list(map(process_interval, generate_intervals(start, end)))
     columns = ["Date"] + [f"Rank {i}" for i in range(1, 11)]
     return pd.DataFrame(all_records[::-1], columns=columns)
-
-
-def popular_users(
-    start: int = utils.TimeConverter.ymd_to_unixms(2023, 7, 1),
-    end: int = utils.TimeConverter.ymd_to_unixms(2023, 8, 1),
-    limit: int = 20,
-) -> pd.DataFrame:
-    def get_username_map() -> Dict[int, str]:
-        query = """
-        SELECT fid, value AS username
-        FROM user_data
-        WHERE type = 6
-        """
-
-        df = execute_query(query)
-        return dict(zip(df["fid"], df["username"]))
-
-    t1 = f"to_timestamp({start / 1000})"
-    t2 = f"to_timestamp({end / 1000})"
-    query = f"""
-        SELECT c.fid AS fid, COUNT(*) AS count
-        FROM reactions r
-        INNER JOIN casts c
-        ON c.hash = r.target_hash AND r.timestamp >= {t1} AND r.timestamp < {t2}
-        GROUP BY c.fid
-        ORDER BY count DESC
-        LIMIT {limit}
-    """
-
-    df = execute_query(query)
-    username_map = get_username_map()
-    df["username"] = df["fid"].apply(lambda fid: username_map.get(fid, "unknown"))
-    return df
-
-
-def cast_reaction_volume(
-    start: int = utils.TimeConverter.ymd_to_unixms(2023, 7, 1),
-    end: int = utils.TimeConverter.ymd_to_unixms(2023, 8, 1),
-) -> pd.DataFrame:
-    def daily_bucket(table: str) -> pd.DataFrame:
-        t1 = f"to_timestamp({start / 1000})"
-        t2 = f"to_timestamp({end / 1000})"
-        query = f"""
-            SELECT date_trunc('day', timestamp) AS date, COUNT(*) AS count, 
-                COUNT(DISTINCT fid) AS unique_fids
-            FROM {table}
-            WHERE timestamp >= {t1} AND timestamp < {t2}
-            GROUP BY date
-            ORDER BY date
-        """
-        return execute_query(query)
-
-    c_df = daily_bucket("casts")
-    r_df = daily_bucket("reactions")
-
-    df = pd.merge(c_df, r_df, on="date", suffixes=("_casts", "_reactions"))
-    df = df.iloc[::-1]
-    return df
-
-
-def channel_volume(
-    start: int = utils.TimeConverter.ymd_to_unixms(2023, 7, 1),
-    end: int = utils.TimeConverter.ymd_to_unixms(2023, 8, 1),
-) -> pd.DataFrame:
-    t1 = f"to_timestamp({start / 1000})"
-    t2 = f"to_timestamp({end / 1000})"
-
-    channel_id_lookup = channel_lookup("channel_id")
-    parent_urls = list(channel_id_lookup.keys())
-    parent_urls_str = ",".join(f"'{url}'" for url in parent_urls)
-
-    query = f"""
-        SELECT date_trunc('day', timestamp) AS date,
-            COUNT(*) FILTER (WHERE parent_url IS NOT NULL AND parent_url 
-                IN ({parent_urls_str})) AS channel_count,
-            COUNT(*) FILTER (WHERE parent_url IS NULL) AS non_channel_count
-        FROM casts
-        WHERE timestamp >= {t1} AND timestamp < {t2}
-        GROUP BY date
-        ORDER BY date
-    """
-
-    df = execute_query(query)
-    return df.iloc[::-1]
 
 
 def frequency_heatmap(start: int, end: int) -> pd.DataFrame:

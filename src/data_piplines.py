@@ -1,4 +1,5 @@
 import ast
+import json
 import os
 from typing import Any, Dict, Generator, List, Literal, Optional, Tuple
 
@@ -83,6 +84,9 @@ def fid_lookup(type: Literal["fid", "username"]) -> Dict[Any, Any]:
         return reverse_dict(make_username_lookup())
 
 
+# TODO: parent_hash lookup
+
+
 # ======================================================================================
 # pipelines
 # ======================================================================================
@@ -128,7 +132,7 @@ def popular_users(
         GROUP BY
             fid
     """
-    
+
     df_casts = execute_query(query_casts)
     df = pd.merge(df_reactions, df_casts, on="fid", how="left")
     df["total_casts"] = df["total_casts"].fillna(0)
@@ -412,6 +416,95 @@ def top_casts_embed_count(
     df = df.pivot(index="date", columns="category", values="avg_reactions").fillna(0)
     df.reset_index(inplace=True)
     df = df.iloc[::-1]
+    return df
+
+
+# TODO: clean up two functions below
+def earliest_actions() -> pd.DataFrame:
+    end = utils.TimeConverter.ms_now()
+    start = end - utils.TimeConverter.to_ms("weeks", 1)
+    df = popular_users(start, end, 150)
+    fids = list(df["fid"])
+
+    # filter out fids that are above 10k, because casts_old max(fid) = ~12k
+    # 2k as a buffer for activities to accumulate
+    fids = [fid for fid in fids if fid < 10000]
+
+    def get_user_data(df_c: pd.DataFrame, df_r: pd.DataFrame, fid: int) -> pd.DataFrame:
+        three_days_ms = utils.TimeConverter.to_ms("days", 3)
+        one_week_ms = utils.TimeConverter.to_ms("weeks", 1)
+        one_month_ms = utils.TimeConverter.to_ms("months", 1)
+        one_quarter_ms = utils.TimeConverter.to_ms("months", 3)
+
+        t = df_c[df_c["author_fid"] == fid]["timestamp"].min()
+        df_c = df_c[(df_c["author_fid"] == fid)]
+        time_intervals = [
+            ("three_days", t + three_days_ms),
+            ("one_week", t + one_week_ms),
+            ("one_month", t + one_month_ms),
+            ("one_quarter", t + one_quarter_ms),
+        ]
+
+        result = {"fid": fid}
+
+        for label, interval_ms in time_intervals:
+            interval_hashes = list(df_c[df_c["timestamp"] <= interval_ms]["hash"])
+            interval_reactions = df_r[df_r["target_hash"].isin(interval_hashes)]
+            result[f"casts_{label}"] = len(interval_hashes)
+            result[f"reactions_{label}"] = interval_reactions.shape[0]
+
+        return result
+
+    df_c = pd.read_parquet("casts_old.parquet")
+    df_r = pd.read_parquet("reactions_old.parquet")
+    df_count = pd.DataFrame([get_user_data(df_c, df_r, fid) for fid in fids])
+    df = df.merge(df_count, on="fid")
+    return df
+    # df.to_csv("data/dummy.csv", index=False)
+
+
+def invited_by_and_purple() -> pd.DataFrame:
+    def purple_lookup() -> Dict[str, bool]:
+        with open("pprl.json", "r") as f:
+            data = json.load(f)
+        owners = [node["token"]["owner"] for node in data["data"]["mints"]["nodes"]]
+
+        query = """
+        SELECT fid, claim->>'address' as address
+        FROM verifications
+        """
+        df = execute_query(query)
+        df["is_purple"] = df["address"].isin(owners)
+        df = df[df["is_purple"] == True]
+        df = df[["fid", "is_purple"]]
+        return df.set_index("fid").to_dict()["is_purple"]
+
+    purple_lookup_dict = purple_lookup()
+    purple_lookup_fn = lambda fid: purple_lookup_dict.get(fid, False)
+
+    username_lookup = fid_lookup("username")
+    username_lookup_fn = lambda fid: username_lookup.get(fid, None)
+    df = pd.read_json("queue/user_warpcast.ndjson", lines=True, dtype_backend="pyarrow")
+    df = df[["fid", "username", "inviter_fid"]]
+    df["inviter_username"] = df["inviter_fid"].apply(username_lookup_fn)
+    df = df[df["inviter_fid"].notnull() & df["inviter_username"].notnull()]
+    # filter out rows where inviter_fid is higher than fid
+    df = df[df["inviter_fid"] < df["fid"]]
+    df["is_purple"] = df["fid"].apply(purple_lookup_fn)
+    # print(df)
+    # df.to_csv("data/dummy.csv", index=False)
+
+    df = (
+        df.groupby("inviter_fid")
+        .agg(
+            total_invites=pd.NamedAgg(column="fid", aggfunc="count"),
+            purple_invites=pd.NamedAgg(column="is_purple", aggfunc="sum"),
+        )
+        .reset_index()
+    )
+    df["inviter_username"] = df["inviter_fid"].apply(username_lookup_fn)
+    print(df)
+    # df.to_csv("data/dummy.csv", index=False)
     return df
 
 

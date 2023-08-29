@@ -84,7 +84,19 @@ def fid_lookup(type: Literal["fid", "username"]) -> Dict[Any, Any]:
         return reverse_dict(make_username_lookup())
 
 
-# TODO: parent_hash lookup
+def hash_lookup(type: Literal["parent_hash"]) -> Dict[Any, Any]:
+    def make_parent_hash_lookup() -> Dict[str, str]:
+        query = f"""
+        SELECT {to_hex('hash')}, {to_hex('parent_hash')}
+        FROM casts
+        WHERE parent_hash IS NOT NULL
+        """
+
+        df = execute_query(query)
+        return dict(zip(df["hash"], df["parent_hash"]))
+
+    if type == "parent_hash":
+        return make_parent_hash_lookup()
 
 
 # ======================================================================================

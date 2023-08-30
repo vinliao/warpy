@@ -2,6 +2,7 @@ import ast
 import json
 import os
 from typing import Any, Callable, Dict, Generator, List, Literal, Optional, Tuple
+from collections import defaultdict
 
 import pandas as pd
 import requests
@@ -58,60 +59,64 @@ def reverse_dict(d: Dict[Any, Any]) -> Dict[Any, Any]:
 def channel_lookup(
     type: Literal["channel_id", "parent_url"]
 ) -> Callable[[str], Optional[str]]:
-    def make_parent_url_lookup() -> Dict[str, str]:
-        df = pd.read_json("data/fip2.ndjson", lines=True)
-        return dict(zip(df["parent_url"], df["channel_id"]))
-
+    df = pd.read_json("data/fip2.ndjson", lines=True)
+    d = dict(zip(df["channel_id"], df["parent_url"]))
     if type == "channel_id":
-        d = make_parent_url_lookup()
-    elif type == "parent_url":
-        d = reverse_dict(make_parent_url_lookup())
-    else:
-        raise ValueError("Invalid type")
+        d = reverse_dict(d)
 
     return lambda x: d.get(x, None)
 
 
 def fid_lookup(type: Literal["fid", "username"]) -> Callable[[Any], Optional[Any]]:
-    def make_username_lookup() -> Dict[int, str]:
-        query = """
-        SELECT fid, value AS username
-        FROM user_data
-        WHERE type = 6
-        """
-        df = execute_query(query)
-        return dict(zip(df["fid"], df["username"]))
-
-    if type == "username":
-        d = make_username_lookup()
-    elif type == "fid":
-        d = reverse_dict(make_username_lookup())
-    else:
-        raise ValueError("Invalid type")
+    query = """
+        SELECT
+            fid,
+            value AS username
+        FROM
+            user_data
+        WHERE
+            type = 6
+    """
+    df = execute_query(query)
+    d = dict(zip(df["fid"], df["username"]))
+    if type == "fid":
+        d = reverse_dict(d)
 
     return lambda x: d.get(x, None)
 
 
 def hash_lookup(
-    type: Literal["parent_hash"], start: int
-) -> Callable[[Any], Optional[Any]]:
+    type: Literal["parent", "child"], start: int
+) -> Callable[[str], List[str]]:
     t = f"to_timestamp({start / 1000})"
-
-    def make_parent_hash_lookup() -> Dict[str, str]:
+    if type == "parent":
         query = f"""
-        SELECT hash, parent_hash
-        FROM casts
-        WHERE parent_hash IS NOT NULL AND timestamp > {t}
+            SELECT
+                {to_hex('hash')},
+                {to_hex('parent_hash')}
+            FROM
+                casts
+            WHERE
+                timestamp > {t}
         """
         df = execute_query(query)
-        return dict(zip(df["hash"], df["parent_hash"]))
-
-    if type == "parent_hash":
-        d = make_parent_hash_lookup()
+        d = dict(zip(df["hash"], df["parent_hash"]))
     else:
-        raise ValueError("Invalid type")
+        query = f"""
+            SELECT
+                {to_hex('parent_hash')},
+                array_agg('0x' || encode(hash, 'hex'))
+            FROM
+                casts
+            WHERE
+                timestamp > {t}
+            GROUP BY
+                parent_hash
+        """
+        df = execute_query(query)
+        d = dict(zip(df["parent_hash"], df["array_agg"]))
 
-    return lambda x: d.get(x, None)
+    return lambda x: d.get(x, [])
 
 
 # ======================================================================================

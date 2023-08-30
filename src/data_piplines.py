@@ -85,40 +85,6 @@ def fid_lookup(type: Literal["fid", "username"]) -> Callable[[Any], Optional[Any
     return lambda x: d.get(x, None)
 
 
-def hash_lookup(
-    type: Literal["parent", "child"], start: int
-) -> Callable[[str], List[str]]:
-    t = f"to_timestamp({start / 1000})"
-    if type == "parent":
-        query = f"""
-            SELECT
-                {to_hex('hash')},
-                {to_hex('parent_hash')}
-            FROM
-                casts
-            WHERE
-                timestamp > {t}
-        """
-        df = execute_query(query)
-        d = dict(zip(df["hash"], df["parent_hash"]))
-    else:
-        query = f"""
-            SELECT
-                {to_hex('parent_hash')},
-                array_agg('0x' || encode(hash, 'hex'))
-            FROM
-                casts
-            WHERE
-                timestamp > {t}
-            GROUP BY
-                parent_hash
-        """
-        df = execute_query(query)
-        d = dict(zip(df["parent_hash"], df["array_agg"]))
-
-    return lambda x: d.get(x, [])
-
-
 # ======================================================================================
 # pipelines
 # ======================================================================================
@@ -231,6 +197,25 @@ def cast_channel_volume(
 
     df = execute_query(query)
     df["channel_id"] = df["parent_url"].apply(channel_lookup("channel_id"))
+    df["channel_id"] = df["channel_id"].astype("string[pyarrow]")
+
+    # NOTE: parent_url only applies to root, propagate this to all children
+    def propagate_channel_id(df: pd.DataFrame) -> pd.DataFrame:
+        root_nodes = df[(df["channel_id"].notnull()) & (df["parent_hash"].isnull())]
+
+        def propagate_from_root(root_hash: str, channel_id: str) -> None:
+            children = df[df["parent_hash"] == root_hash]
+            df.loc[df["parent_hash"] == root_hash, "channel_id"] = channel_id
+            for child_hash in children["hash"]:
+                propagate_from_root(child_hash, channel_id)
+
+        for _, root in root_nodes.iterrows():
+            propagate_from_root(root["hash"], root["channel_id"])
+
+        return df
+
+    df = propagate_channel_id(df)
+    df = df.drop(columns=["parent_url"])
     return df
 
 

@@ -1,7 +1,7 @@
 import ast
 import json
 import os
-from typing import Any, Dict, Generator, List, Literal, Optional, Tuple
+from typing import Any, Callable, Dict, Generator, List, Literal, Optional, Tuple
 
 import pandas as pd
 import requests
@@ -55,48 +55,63 @@ def reverse_dict(d: Dict[Any, Any]) -> Dict[Any, Any]:
     return {v: k for k, v in d.items()}
 
 
-def channel_lookup(type: Literal["channel_id", "parent_url"]) -> Dict[str, str]:
+def channel_lookup(
+    type: Literal["channel_id", "parent_url"]
+) -> Callable[[str], Optional[str]]:
     def make_parent_url_lookup() -> Dict[str, str]:
         df = pd.read_json("data/fip2.ndjson", lines=True)
         return dict(zip(df["parent_url"], df["channel_id"]))
 
     if type == "channel_id":
-        return make_parent_url_lookup()
+        d = make_parent_url_lookup()
     elif type == "parent_url":
-        return reverse_dict(make_parent_url_lookup())
+        d = reverse_dict(make_parent_url_lookup())
+    else:
+        raise ValueError("Invalid type")
+
+    return lambda x: d.get(x, None)
 
 
-def fid_lookup(type: Literal["fid", "username"]) -> Dict[Any, Any]:
+def fid_lookup(type: Literal["fid", "username"]) -> Callable[[Any], Optional[Any]]:
     def make_username_lookup() -> Dict[int, str]:
-        # value of user_data type 6 is username
         query = """
         SELECT fid, value AS username
         FROM user_data
         WHERE type = 6
         """
-
         df = execute_query(query)
         return dict(zip(df["fid"], df["username"]))
 
     if type == "username":
-        return make_username_lookup()
+        d = make_username_lookup()
     elif type == "fid":
-        return reverse_dict(make_username_lookup())
+        d = reverse_dict(make_username_lookup())
+    else:
+        raise ValueError("Invalid type")
+
+    return lambda x: d.get(x, None)
 
 
-def hash_lookup(type: Literal["parent_hash"]) -> Dict[Any, Any]:
+def hash_lookup(
+    type: Literal["parent_hash"], start: int
+) -> Callable[[Any], Optional[Any]]:
+    t = f"to_timestamp({start / 1000})"
+
     def make_parent_hash_lookup() -> Dict[str, str]:
         query = f"""
-        SELECT {to_hex('hash')}, {to_hex('parent_hash')}
+        SELECT hash, parent_hash
         FROM casts
-        WHERE parent_hash IS NOT NULL
+        WHERE parent_hash IS NOT NULL AND timestamp > {t}
         """
-
         df = execute_query(query)
         return dict(zip(df["hash"], df["parent_hash"]))
 
     if type == "parent_hash":
-        return make_parent_hash_lookup()
+        d = make_parent_hash_lookup()
+    else:
+        raise ValueError("Invalid type")
+
+    return lambda x: d.get(x, None)
 
 
 # ======================================================================================
@@ -148,9 +163,7 @@ def popular_users(
     df_casts = execute_query(query_casts)
     df = pd.merge(df_reactions, df_casts, on="fid", how="left")
     df["total_casts"] = df["total_casts"].fillna(0)
-
-    username_lookup = fid_lookup("username")
-    df["username"] = df["fid"].apply(lambda fid: username_lookup.get(fid, "unknown"))
+    df["username"] = df["fid"].apply(fid_lookup("username"))
     return df
 
 
@@ -194,35 +207,25 @@ def cast_channel_volume(
     t1 = f"to_timestamp({start / 1000})"
     t2 = f"to_timestamp({end / 1000})"
 
-    channel_id_lookup = channel_lookup("channel_id")
-    parent_urls = list(channel_id_lookup.keys())
-    parent_urls_str = ",".join(f"'{url}'" for url in parent_urls)
-
     query = f"""
         SELECT
             date_trunc('day', timestamp) AS date,
-            COUNT(*) FILTER (
-                WHERE
-                    parent_url IS NOT NULL
-                    AND parent_url IN ({parent_urls_str})
-            ) AS channel_count,
-            COUNT(*) FILTER (
-                WHERE
-                    parent_url IS NULL
-            ) AS non_channel_count
+            fid,
+            {to_hex('parent_hash')},
+            {to_hex('hash')},
+            timestamp,
+            parent_url
         FROM
             casts
         WHERE
             timestamp >= {t1}
             AND timestamp < {t2}
-        GROUP BY
-            date
         ORDER BY
             date
     """
 
     df = execute_query(query)
-    df = df.iloc[::-1]
+    df["channel_id"] = df["parent_url"].apply(channel_lookup("channel_id"))
     return df
 
 
@@ -494,11 +497,9 @@ def invited_by_and_purple() -> pd.DataFrame:
     purple_lookup_dict = purple_lookup()
     purple_lookup_fn = lambda fid: purple_lookup_dict.get(fid, False)
 
-    username_lookup = fid_lookup("username")
-    username_lookup_fn = lambda fid: username_lookup.get(fid, None)
     df = pd.read_json("queue/user_warpcast.ndjson", lines=True, dtype_backend="pyarrow")
     df = df[["fid", "username", "inviter_fid"]]
-    df["inviter_username"] = df["inviter_fid"].apply(username_lookup_fn)
+    df["inviter_username"] = df["inviter_fid"].apply(fid_lookup("username"))
     df = df[df["inviter_fid"].notnull() & df["inviter_username"].notnull()]
     # filter out rows where inviter_fid is higher than fid
     df = df[df["inviter_fid"] < df["fid"]]
@@ -514,7 +515,7 @@ def invited_by_and_purple() -> pd.DataFrame:
         )
         .reset_index()
     )
-    df["inviter_username"] = df["inviter_fid"].apply(username_lookup_fn)
+    df["inviter_username"] = df["inviter_fid"].apply(fid_lookup("username"))
     print(df)
     # df.to_csv("data/dummy.csv", index=False)
     return df

@@ -103,7 +103,7 @@ def main() -> None:
         return f"{warpcast_url}?limit={limit}"
 
     t = utils.TimeConverter.ymd_to_unixms(2023, 7, 28)
-    cursor = "eyJsaW1pdCI6MTAwMCwiYmVmb3JlIjoxNjkzMjI3ODg3MDAwfQ"
+    cursor = "eyJsaW1pdCI6MTAwMCwiYmVmb3JlIjoxNjkxNzE0NDA4MDAwfQ"
 
     while True:
         url = _make_url(limit=1000, cursor=cursor)

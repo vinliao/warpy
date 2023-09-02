@@ -47,6 +47,20 @@ def to_bytea(hex_column: str) -> str:
     return f"decode('{hex_column}', 'hex')"
 
 
+def read_ndjson(file_path: str) -> pd.DataFrame:
+    # wrapper exist because i want pyarrow by default
+    # pyarrow because it preserves dtypes
+    return pd.read_json(
+        file_path, lines=True, dtype_backend="pyarrow", convert_dates=False
+    )
+
+
+def read_parquet(file_path: str) -> pd.DataFrame:
+    # wrapper exist because i want pyarrow by default
+    # pyarrow because it preserves dtypes
+    return pd.read_parquet(file_path, dtype_backend="pyarrow")
+
+
 # ======================================================================================
 # lookup tables
 # ======================================================================================
@@ -187,139 +201,26 @@ def cast_reaction_volume(
     return df
 
 
+# TODO: ideally get this info from replicator
 def casts_with_channel(
     start: int = utils.TimeConverter.ymd_to_unixms(2023, 7, 1),
     end: int = utils.TimeConverter.ymd_to_unixms(2023, 8, 1),
 ) -> pd.DataFrame:
-    t1 = f"to_timestamp({start / 1000})"
-    t2 = f"to_timestamp({end / 1000})"
-
+    # NOTE: ndjson indexed from src/index_cast.py
+    con = duckdb.connect(database=":memory:")
     query = f"""
         SELECT
-            fid,
-            {to_hex('parent_hash')},
-            {to_hex('hash')},
-            timestamp,
-            parent_url
+            *
         FROM
-            casts
+            read_json_auto('data/cast_warpcast.ndjson')
         WHERE
-            timestamp >= {t1}
-            AND timestamp < {t2}
+            timestamp >= {start}
+            AND timestamp < {end}
     """
-
-    df = execute_query(query)
-    df["channel_id"] = df["parent_url"].apply(channel_lookup("channel_id"))
-    df["channel_id"] = df["channel_id"].astype("string[pyarrow]")
-
-    # TODO: handle if cast are necroing old cast
-    def propagate_channel_id(df: pd.DataFrame) -> pd.DataFrame:
-        root_nodes = df.loc[
-            (df["channel_id"].notna()) & (df["parent_hash"].isna()),
-            ["hash", "channel_id"],
-        ]
-        channel_id_map = root_nodes.set_index("hash")["channel_id"].to_dict()
-
-        # Function to propagate channel_id to children
-        def propagate(row: pd.Series) -> str:
-            parent_hash = row["parent_hash"]
-            return channel_id_map.get(parent_hash, row["channel_id"])
-
-        # Vectorized operation to update 'channel_id'
-        df["channel_id"] = df.apply(propagate, axis=1)
-
-        # Update channel_id_map for next level children
-        df["channel_id"] = df["channel_id"].astype("string[pyarrow]")  # If needed
-        new_map = df.loc[df["channel_id"].notna(), ["hash", "channel_id"]]
-        channel_id_map.update(new_map.set_index("hash")["channel_id"].to_dict())
-
-        return df
-
-    df = propagate_channel_id(df)
-    df = df.drop(columns=["parent_url"])
+    df = con.execute(query).fetchdf()
+    df = df.drop_duplicates(subset=["hash"])
+    df["date"] = df["timestamp"].apply(utils.TimeConverter.unixms_to_ymd)
     return df
-
-
-# TODO: not done
-def channel_volume_table(
-    start: int = utils.TimeConverter.ymd_to_unixms(2023, 7, 1),
-    end: int = utils.TimeConverter.ymd_to_unixms(2023, 8, 1),
-) -> pd.DataFrame:
-    df = casts_with_channel(start, end)
-    df["date"] = pd.to_datetime(df["timestamp"], unit="ms").dt.date
-    con = duckdb.connect(database=":memory:")
-    con.register("df", df)
-    query = """
-        SELECT date, channel_id, COUNT(hash) AS casts
-        FROM df
-        GROUP BY date, channel_id
-        ORDER BY date, casts DESC
-        """
-    df_daily = con.execute(query).fetchdf()
-    df_pivot = df_daily.pivot(index="date", columns="channel_id", values="casts")
-    df_pivot = df_pivot.rank(axis=1, method="first", ascending=False)
-
-    return df_pivot
-
-
-# # TODO: too complex!
-# def channel_volume_table(
-#     start: int = utils.TimeConverter.ymd_to_unixms(2023, 6, 1)
-# ) -> pd.DataFrame:
-#     def _channel_volume(start: int, end: int, limit: int = 10) -> pd.DataFrame:
-#         t1 = f"to_timestamp({start / 1000})"
-#         t2 = f"to_timestamp({end / 1000})"
-
-#         query = f"""
-#             WITH cast_data AS (
-#                 SELECT parent_url, COUNT(*) as cast_count
-#                 FROM casts
-#                 WHERE timestamp >= {t1} AND timestamp < {t2} AND parent_url IS NOT NULL
-#                 GROUP BY parent_url
-#             ),
-#             reaction_data AS (
-#                 SELECT c.parent_url, COUNT(r.id) as reaction_count
-#                 FROM casts c
-#                 LEFT JOIN reactions r ON r.target_hash = c.hash
-#                 WHERE c.timestamp >= {t1} AND c.timestamp < {t2}
-#                     AND c.parent_url IS NOT NULL
-#                 GROUP BY c.parent_url
-#             )
-#             SELECT cd.parent_url
-#             FROM cast_data cd
-#             LEFT JOIN reaction_data rd ON cd.parent_url = rd.parent_url
-#             ORDER BY (cd.cast_count + COALESCE(rd.reaction_count, 0)) DESC
-#             LIMIT {limit};
-#         """
-#         return execute_query(query)
-
-#     # NOTE: 2023/06/01 is first-ever channel cast
-#     end = utils.TimeConverter.ms_now()
-
-#     url_id_map = pd.read_json("data/fip2.ndjson", lines=True)
-#     url_id_map = url_id_map.set_index("parent_url").to_dict()["channel_id"]
-#     get_channel_id = lambda url: url_id_map[url]
-
-#     def generate_intervals(
-#         start_timestamp: int, end_timestamp: int
-#     ) -> Generator[Tuple[int, int], None, None]:
-#         one_week_ms = utils.TimeConverter.to_ms("weeks", 1)
-#         while start_timestamp < end_timestamp:
-#             next_timestamp = start_timestamp + one_week_ms
-#             yield start_timestamp, next_timestamp
-#             start_timestamp = next_timestamp
-
-#     def process_interval(interval: Tuple[int, int]) -> List[str]:
-#         start, end = interval
-#         df = _channel_volume(start=start, end=end, limit=10)
-#         df = df[df["parent_url"].isin(list(url_id_map.keys()))]
-
-#         df["result"] = "f/" + df["parent_url"].apply(get_channel_id)
-#         return [utils.TimeConverter.unixms_to_ymd(start)] + list(df["result"])
-
-#     all_records = list(map(process_interval, generate_intervals(start, end)))
-#     columns = ["Date"] + [f"Rank {i}" for i in range(1, 11)]
-#     return pd.DataFrame(all_records[::-1], columns=columns)
 
 
 def frequency_heatmap(start: int, end: int) -> pd.DataFrame:

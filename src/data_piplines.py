@@ -142,36 +142,52 @@ def cast_reaction_volume(
     start: int = utils.TimeConverter.ymd_to_unixms(2023, 7, 1),
     end: int = utils.TimeConverter.ymd_to_unixms(2023, 8, 1),
 ) -> pd.DataFrame:
-    def _get_data(col: str) -> pd.DataFrame:
-        t1 = f"to_timestamp({start / 1000})"
-        t2 = f"to_timestamp({end / 1000})"
+    t1 = f"to_timestamp({start / 1000})"
+    t2 = f"to_timestamp({end / 1000})"
 
-        query = f"""
-            SELECT
-                date_trunc('day', timestamp) AS date,
-                COUNT(*) AS count,
-                COUNT(DISTINCT fid) AS unique_fids
-            FROM
-                {col}
-            WHERE
-                timestamp >= {t1}
-                AND timestamp < {t2}
-            GROUP BY
-                date
-            ORDER BY
-                date
-        """
-        return execute_query(query)
+    query = f"""
+        SELECT
+            date_trunc('day', timestamp AT TIME ZONE 'UTC') AS date,
+            COUNT(*) AS count,
+            COUNT(DISTINCT fid) AS unique_fids,
+            COUNT(DISTINCT parent_hash) AS unique_parent_hashes
+        FROM
+            casts
+        WHERE
+            timestamp >= {t1}
+            AND timestamp < {t2}
+        GROUP BY
+            date
+        ORDER BY
+            date
+    """
+    c_df = execute_query(query.format(col="casts"))
 
-    c_df = _get_data("casts")
-    r_df = _get_data("reactions")
+    query = f"""
+        SELECT
+            date_trunc('day', timestamp AT TIME ZONE 'UTC') AS date,
+            COUNT(*) AS count,
+            COUNT(DISTINCT fid) AS unique_fids,
+            COUNT(DISTINCT target_fid) AS unique_target_fids,
+            COUNT(DISTINCT target_hash) AS unique_target_hashes
+        FROM
+            reactions
+        WHERE
+            timestamp >= {t1}
+            AND timestamp < {t2}
+        GROUP BY
+            date
+        ORDER BY
+            date
+    """
+    r_df = execute_query(query)
 
     df = pd.merge(c_df, r_df, on="date", suffixes=("_casts", "_reactions"))
     df = df.iloc[::-1]
     return df
 
 
-def cast_channel_volume(
+def casts_with_channel(
     start: int = utils.TimeConverter.ymd_to_unixms(2023, 7, 1),
     end: int = utils.TimeConverter.ymd_to_unixms(2023, 8, 1),
 ) -> pd.DataFrame:
@@ -180,7 +196,6 @@ def cast_channel_volume(
 
     query = f"""
         SELECT
-            date_trunc('day', timestamp) AS date,
             fid,
             {to_hex('parent_hash')},
             {to_hex('hash')},
@@ -191,27 +206,32 @@ def cast_channel_volume(
         WHERE
             timestamp >= {t1}
             AND timestamp < {t2}
-        ORDER BY
-            date
     """
 
     df = execute_query(query)
     df["channel_id"] = df["parent_url"].apply(channel_lookup("channel_id"))
     df["channel_id"] = df["channel_id"].astype("string[pyarrow]")
 
-    # NOTE: parent_url only applies to root, propagate this to all children
     # TODO: handle if cast are necroing old cast
     def propagate_channel_id(df: pd.DataFrame) -> pd.DataFrame:
-        root_nodes = df[(df["channel_id"].notnull()) & (df["parent_hash"].isnull())]
+        root_nodes = df.loc[
+            (df["channel_id"].notna()) & (df["parent_hash"].isna()),
+            ["hash", "channel_id"],
+        ]
+        channel_id_map = root_nodes.set_index("hash")["channel_id"].to_dict()
 
-        def propagate_from_root(root_hash: str, channel_id: str) -> None:
-            children = df[df["parent_hash"] == root_hash]
-            df.loc[df["parent_hash"] == root_hash, "channel_id"] = channel_id
-            for child_hash in children["hash"]:
-                propagate_from_root(child_hash, channel_id)
+        # Function to propagate channel_id to children
+        def propagate(row: pd.Series) -> str:
+            parent_hash = row["parent_hash"]
+            return channel_id_map.get(parent_hash, row["channel_id"])
 
-        for _, root in root_nodes.iterrows():
-            propagate_from_root(root["hash"], root["channel_id"])
+        # Vectorized operation to update 'channel_id'
+        df["channel_id"] = df.apply(propagate, axis=1)
+
+        # Update channel_id_map for next level children
+        df["channel_id"] = df["channel_id"].astype("string[pyarrow]")  # If needed
+        new_map = df.loc[df["channel_id"].notna(), ["hash", "channel_id"]]
+        channel_id_map.update(new_map.set_index("hash")["channel_id"].to_dict())
 
         return df
 
@@ -225,7 +245,7 @@ def channel_volume_table(
     start: int = utils.TimeConverter.ymd_to_unixms(2023, 7, 1),
     end: int = utils.TimeConverter.ymd_to_unixms(2023, 8, 1),
 ) -> pd.DataFrame:
-    df = cast_channel_volume(start, end)
+    df = casts_with_channel(start, end)
     df["date"] = pd.to_datetime(df["timestamp"], unit="ms").dt.date
     con = duckdb.connect(database=":memory:")
     con.register("df", df)

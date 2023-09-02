@@ -1,3 +1,4 @@
+import calendar
 import datetime
 import time
 
@@ -34,7 +35,7 @@ class TimeConverter:
 
     @staticmethod
     def ymd_to_unixms(year: int, month: int, day: int) -> int:
-        return int(time.mktime((year, month, day, 0, 0, 0, 0, 0, 0)) * 1000)
+        return calendar.timegm((year, month, day, 0, 0, 0)) * 1000
 
     @staticmethod
     def unixms_to_ymd(ms: int) -> tuple[int, int, int]:

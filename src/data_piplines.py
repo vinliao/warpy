@@ -201,6 +201,38 @@ def cast_reaction_volume(
     return df
 
 
+def cast_reaction_reply_volume(
+    start: int = utils.TimeConverter.ymd_to_unixms(2023, 7, 1),
+    end: int = utils.TimeConverter.ymd_to_unixms(2023, 8, 1),
+) -> pd.DataFrame:
+    t1 = f"to_timestamp({start / 1000})"
+    t2 = f"to_timestamp({end / 1000})"
+    query = f"""
+        SELECT 
+            c.hash AS hash,
+            c.text AS text,
+            c.parent_hash AS parent_hash,
+            c.timestamp AS timestamp,
+            c.parent_url AS parent_url,
+            COUNT(DISTINCT r.hash) AS total_reactions,
+            COUNT(DISTINCT c2.hash) AS total_replies
+        FROM 
+            casts c
+        LEFT JOIN 
+            reactions r ON c.hash = r.target_hash
+        LEFT JOIN
+            casts c2 ON c.hash = c2.parent_hash
+        WHERE 
+            c.timestamp >= {t2} AND c.timestamp <= {t1}
+        GROUP BY 
+            c.hash, c.parent_hash, c.timestamp, c.parent_url, c.text
+    """
+
+    df = execute_query(query)
+    df["channel"] = df["parent_url"].apply(channel_lookup("channel_id"))
+    return df
+
+
 # TODO: ideally get this info from replicator
 def casts_with_channel(
     start: int = utils.TimeConverter.ymd_to_unixms(2023, 7, 1),
